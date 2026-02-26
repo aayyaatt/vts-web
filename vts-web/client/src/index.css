@@ -1,0 +1,47 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap');
+
+:root {
+  --bg:       #080c14;
+  --panel:    #0d1424;
+  --panel2:   #111c30;
+  --border:   rgba(56,139,253,0.12);
+  --border2:  rgba(56,139,253,0.22);
+  --blue:     #388bfd;
+  --cyan:     #39d0d8;
+  --green:    #3fb950;
+  --amber:    #f0a034;
+  --red:      #f85149;
+  --purple:   #a371f7;
+  --text:     #cdd9e5;
+  --dim:      #8b949e;
+  --faint:    #3d444d;
+  --mono:     'IBM Plex Mono', monospace;
+  --sans:     'IBM Plex Sans', sans-serif;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body, #root {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(139,148,158,0.25); border-radius: 3px; }
+
+/* Utility */
+.mono { font-family: var(--mono); }
+.dim  { color: var(--dim); }
+
+/* Animations */
+@keyframes fadeIn  { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+@keyframes pulse   { 0%,100%{opacity:1} 50%{opacity:.4} }
+@keyframes spin    { to { transform:rotate(360deg); } }
+
+.fade-in { animation: fadeIn 0.3s ease both; }

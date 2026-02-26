@@ -1,0 +1,112 @@
+.root { display:flex; flex-direction:column; height:100vh; overflow:hidden; }
+
+/* ── Nav ── */
+.nav {
+  height: 48px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  gap: 0;
+  flex-shrink: 0;
+  z-index: 100;
+}
+
+.navLogo {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--blue);
+  letter-spacing: .08em;
+  margin-right: 32px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.navDot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 6px var(--green);
+  animation: pulse 2s infinite;
+}
+
+.navTabs { display:flex; height:100%; gap:2px; }
+
+.navTab {
+  height: 100%;
+  padding: 0 18px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--dim);
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+  transition: all .15s;
+  white-space: nowrap;
+}
+
+.navTab:hover        { color:var(--text); background:rgba(56,139,253,.05); }
+.navTabActive        { color:var(--blue) !important; border-bottom-color:var(--blue); }
+
+.navRight {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.statusBadge {
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 100px;
+  background: rgba(63,185,80,.12);
+  color: var(--green);
+  border: 1px solid rgba(63,185,80,.25);
+}
+
+.navUser { display:flex; align-items:center; gap:8px; font-size:13px; color:var(--dim); }
+
+.avatar {
+  width:28px; height:28px; border-radius:50%;
+  background: linear-gradient(135deg,#1a3a6e,var(--blue));
+  display:flex; align-items:center; justify-content:center;
+  font-size:11px; font-weight:700; color:#fff;
+}
+
+.roleBadge {
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(56,139,253,.1);
+  color: var(--blue);
+  border: 1px solid rgba(56,139,253,.2);
+  text-transform: uppercase;
+}
+
+.logoutBtn {
+  padding: 5px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: var(--sans);
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid var(--border2);
+  color: var(--dim);
+  transition: all .15s;
+}
+
+.logoutBtn:hover {
+  background: rgba(248,81,73,.1);
+  color: var(--red);
+  border-color: rgba(248,81,73,.3);
+}
+
+/* ── Main ── */
+.main { flex:1; overflow-y:auto; }
