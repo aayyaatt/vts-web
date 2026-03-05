@@ -16,7 +16,7 @@ app.use('/api/dashboard', require('./routes/dashboard'));
 app.use('/api',           require('./routes/api'));
 
 // Health check
-app.get('/health', (req, res) => res.json({ status: 'ok', time: new Date() }));
+app.get('/api/health', (req, res) => res.json({ status: 'ok', time: new Date() }));
 
 // ── Start ─────────────────────────────────────────────────────
 async function start() {
