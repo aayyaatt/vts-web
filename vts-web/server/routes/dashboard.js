@@ -3,7 +3,6 @@ const router  = express.Router();
 const pool    = require('../db/pool');
 const auth    = require('../middleware/auth');
 
-// ── GET /api/dashboard/stats ──────────────────────────────────
 router.get('/stats', auth, async (req, res) => {
   try {
     const [active, available, overstay, denied] = await Promise.all([
@@ -23,7 +22,6 @@ router.get('/stats', auth, async (req, res) => {
   }
 });
 
-// ── GET /api/dashboard/active-visits ─────────────────────────
 router.get('/active-visits', auth, async (req, res) => {
   try {
     const { rows } = await pool.query(`
@@ -46,7 +44,6 @@ router.get('/active-visits', auth, async (req, res) => {
   }
 });
 
-// ── GET /api/dashboard/activity ──────────────────────────────
 router.get('/activity', auth, async (req, res) => {
   try {
     const { rows } = await pool.query(`

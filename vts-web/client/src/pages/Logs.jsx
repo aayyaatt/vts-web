@@ -46,36 +46,40 @@ export default function Logs() {
           <table style={{width:'100%',borderCollapse:'collapse'}}>
             <thead>
               <tr>
-                {['Time','User','Action','Table','Details'].map(h=>(
+                {['Time','Staff','Action','Visitor','CPR Number'].map(h=>(
                   <th key={h} style={{fontFamily:'var(--mono)',fontSize:11,letterSpacing:'.08em',color:'var(--dim)',textAlign:'left',padding:'10px 16px',borderBottom:'1px solid var(--border)',background:'rgba(255,255,255,.02)',textTransform:'uppercase'}}>
                     {h}
                   </th>
                 ))}
               </tr>
             </thead>
-            <tbody>
-              {filtered.length === 0 ? (
-                <tr><td colSpan={5} style={{textAlign:'center',padding:'40px 0',color:'var(--dim)',fontSize:13}}>No log entries.</td></tr>
-              ) : filtered.map((l,i)=>(
-                <tr key={i} onMouseEnter={e=>e.currentTarget.style.background='rgba(56,139,253,.04)'}
-                    onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
-                  <td style={{padding:'11px 16px',fontFamily:'var(--mono)',fontSize:12,borderBottom:'1px solid var(--border)',color:'var(--dim)',whiteSpace:'nowrap'}}>
-                    {new Date(l.performed_at).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}
-                    <div style={{fontSize:10,color:'var(--faint)'}}>
-                      {new Date(l.performed_at).toLocaleDateString('en-GB')}
-                    </div>
-                  </td>
-                  <td style={{padding:'11px 16px',fontSize:13,borderBottom:'1px solid var(--border)'}}>{l.full_name}</td>
-                  <td style={{padding:'11px 16px',borderBottom:'1px solid var(--border)'}}>
-                    <span className={`badge ${actionColor[l.action]||'badge-blue'}`}>{l.action}</span>
-                  </td>
-                  <td style={{padding:'11px 16px',fontSize:12,fontFamily:'var(--mono)',color:'var(--dim)',borderBottom:'1px solid var(--border)'}}>{l.target_table || '—'}</td>
-                  <td style={{padding:'11px 16px',fontSize:12,color:'var(--dim)',borderBottom:'1px solid var(--border)',maxWidth:280,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
-                    {l.new_values ? JSON.stringify(l.new_values) : '—'}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
+           <tbody>
+  {filtered.length === 0 ? (
+    <tr><td colSpan={5} style={{textAlign:'center',padding:'40px 0',color:'var(--dim)',fontSize:13}}>No log entries.</td></tr>
+  ) : filtered.map((l,i)=>(
+    <tr key={i} onMouseEnter={e=>e.currentTarget.style.background='rgba(56,139,253,.04)'}
+        onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+      <td style={{padding:'11px 16px',fontFamily:'var(--mono)',fontSize:12,borderBottom:'1px solid var(--border)',color:'var(--dim)',whiteSpace:'nowrap'}}>
+        {new Date(l.performed_at).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}
+        <div style={{fontSize:10,color:'var(--faint)'}}>
+          {new Date(l.performed_at).toLocaleDateString('en-GB')}
+        </div>
+      </td>
+      <td style={{padding:'11px 16px',fontSize:13,borderBottom:'1px solid var(--border)'}}>
+        {l.staff_name}
+      </td>
+      <td style={{padding:'11px 16px',borderBottom:'1px solid var(--border)'}}>
+        <span className={`badge ${actionColor[l.action]||'badge-blue'}`}>{l.action}</span>
+      </td>
+      <td style={{padding:'11px 16px',fontSize:13,borderBottom:'1px solid var(--border)'}}>
+        {l.visitor_name || '—'}
+      </td>
+      <td style={{padding:'11px 16px',fontFamily:'var(--mono)',fontSize:12,color:'var(--dim)',borderBottom:'1px solid var(--border)'}}>
+        {l.cpr_number || '—'}
+      </td>
+    </tr>
+  ))}
+</tbody>
           </table>
         </div>
       </div>
