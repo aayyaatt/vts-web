@@ -207,4 +207,67 @@ router.get('/users', auth, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+
+// ══ GOOGLE FORMS SUBMISSION ════════════════════════════════════
+
+router.post('/visits-from-form', async (req, res) => {
+  const apiKey = req.headers['x-api-key'];
+  if (apiKey !== process.env.FORM_API_KEY) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  const { full_name, cpr_number, phone, email, company, host_employee, purpose } = req.body;
+  if (!full_name || !cpr_number) {
+    return res.status(400).json({ error: 'full_name and cpr_number are required.' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const vRes = await client.query(
+      `INSERT INTO visitors (full_name, cpr_number, phone, email, company)
+       VALUES ($1,$2,$3,$4,$5)
+       ON CONFLICT (cpr_number) DO UPDATE
+         SET full_name=$1, phone=$3, email=$4, company=$5, updated_at=now()
+       RETURNING visitor_id`,
+      [full_name, cpr_number, phone||null, email||null, company||null]
+    );
+    const visitor_id = vRes.rows[0].visitor_id;
+
+    const cardRes = await client.query(
+      `SELECT card_id FROM access_cards
+       WHERE status='available' ORDER BY card_id ASC LIMIT 1 FOR UPDATE SKIP LOCKED`
+    );
+    const card_id = cardRes.rows[0]?.card_id || null;
+
+    const userRes = await client.query(
+      `SELECT user_id FROM users WHERE role='admin' LIMIT 1`
+    );
+    const issued_by = userRes.rows[0]?.user_id;
+
+    await client.query(
+      `INSERT INTO visits (visitor_id, card_id, host_employee, purpose, issued_by)
+       VALUES ($1,$2,$3,$4,$5)`,
+      [visitor_id, card_id, host_employee||null, purpose||null, issued_by]
+    );
+
+    if (card_id) {
+      await client.query(
+        `UPDATE access_cards SET status='assigned', visitor_id=$1 WHERE card_id=$2`,
+        [visitor_id, card_id]
+      );
+    }
+
+    await client.query('COMMIT');
+    res.json({ success: true, visitor_id, card_id });
+
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
 module.exports = router;
+
