@@ -46,7 +46,7 @@ export default function Logs() {
           <table style={{width:'100%',borderCollapse:'collapse'}}>
             <thead>
               <tr>
-                {['Time','Staff','Action','Visitor','CPR Number'].map(h=>(
+                {['Time', 'Staff', 'Action', 'Visitor Name', 'CPR Number'].map(h => (
                   <th key={h} style={{fontFamily:'var(--mono)',fontSize:11,letterSpacing:'.08em',color:'var(--dim)',textAlign:'left',padding:'10px 16px',borderBottom:'1px solid var(--border)',background:'rgba(255,255,255,.02)',textTransform:'uppercase'}}>
                     {h}
                   </th>
@@ -75,8 +75,8 @@ export default function Logs() {
         {l.visitor_name || '—'}
       </td>
       <td style={{padding:'11px 16px',fontFamily:'var(--mono)',fontSize:12,color:'var(--dim)',borderBottom:'1px solid var(--border)'}}>
-        {l.cpr_number || '—'}
-      </td>
+       {l.visitor_cpr || '—'}
+       </td>
     </tr>
   ))}
 </tbody>

@@ -6,7 +6,7 @@ const auth    = require('../middleware/auth');
 router.get('/stats', auth, async (req, res) => {
   try {
     const [active, available, overstay, denied] = await Promise.all([
-      pool.query(`SELECT COUNT(*) FROM visits WHERE status='active'`),
+      pool.query(`SELECT COUNT(*) FROM visits WHERE status IN ('active','overstay')`),
       pool.query(`SELECT COUNT(*) FROM access_cards WHERE status='available'`),
       pool.query(`SELECT COUNT(*) FROM visits WHERE status='overstay'`),
       pool.query(`SELECT COUNT(*) FROM audit_log WHERE action='ACCESS_DENIED' AND performed_at > now() - interval '24h'`),
@@ -21,7 +21,6 @@ router.get('/stats', auth, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
 router.get('/active-visits', auth, async (req, res) => {
   try {
     const { rows } = await pool.query(`
@@ -32,10 +31,10 @@ router.get('/active-visits', auth, async (req, res) => {
         u.full_name AS issued_by_name,
         EXTRACT(EPOCH FROM (now() - v.check_in_time))/60 AS duration_minutes
       FROM visits v
-      JOIN visitors   vi ON vi.visitor_id = v.visitor_id
+      JOIN visitors    vi ON vi.visitor_id = v.visitor_id
       LEFT JOIN access_cards ac ON ac.card_id = v.card_id
-      JOIN users      u  ON u.user_id    = v.issued_by
-      WHERE v.status IN ('active','overstay')
+      JOIN users       u  ON u.user_id = v.issued_by
+      WHERE v.status IN ('active', 'overstay')
       ORDER BY v.check_in_time ASC
     `);
     res.json(rows);
@@ -47,10 +46,23 @@ router.get('/active-visits', auth, async (req, res) => {
 router.get('/activity', auth, async (req, res) => {
   try {
     const { rows } = await pool.query(`
-      SELECT action, target_table, new_values, performed_at, u.full_name
+      SELECT
+        al.audit_id,
+        al.action,
+        al.target_table,
+        al.new_values,
+        al.performed_at,
+        u.full_name      AS staff_name,
+        vi.full_name     AS visitor_name,
+        vi.cpr_number    AS visitor_cpr
       FROM audit_log al
       JOIN users u ON u.user_id = al.user_id
-      ORDER BY performed_at DESC LIMIT 20
+      LEFT JOIN visits v
+        ON v.visit_id::text = al.target_id
+        AND al.action IN ('CHECKIN', 'CHECKOUT')
+      LEFT JOIN visitors vi ON vi.visitor_id = v.visitor_id
+      ORDER BY al.performed_at DESC
+      LIMIT 100
     `);
     res.json(rows);
   } catch (err) {
