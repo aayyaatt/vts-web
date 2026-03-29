@@ -2,16 +2,17 @@ import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import styles from './Layout.module.css';
 
-const NAV_ITEMS = [
-  { to: '/dashboard', icon: '⬛', label: 'Dashboard' },
-  { to: '/checkin',   icon: '✚',  label: 'Check-In'  },
-  { to: '/cards',     icon: '🪪', label: 'Cards'     },
-  { to: '/logs',      icon: '📋', label: 'Access Logs'},
-];
-
 export default function Layout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+
+  const NAV_ITEMS = [
+    { to: '/dashboard', icon: '⬛', label: 'Dashboard' },
+    { to: '/checkin',   icon: '✚',  label: 'Check-In'  },
+    { to: '/cards',     icon: '🪪', label: 'Cards'     },
+    { to: '/logs',      icon: '📋', label: 'Access Logs'},
+    ...(user?.role === 'admin' ? [{ to: '/users', icon: '👥', label: 'Users' }] : []),
+  ];
 
   async function handleLogout() {
     await logout();
@@ -22,7 +23,6 @@ export default function Layout() {
 
   return (
     <div className={styles.root}>
-      {/* Top Nav */}
       <nav className={styles.nav}>
         <div className={styles.navLogo}>
           <span className={styles.navDot} />
@@ -57,7 +57,6 @@ export default function Layout() {
         </div>
       </nav>
 
-      {/* Page content */}
       <main className={styles.main}>
         <Outlet />
       </main>

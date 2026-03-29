@@ -269,5 +269,74 @@ router.post('/visits-from-form', async (req, res) => {
     client.release();
   }
 });
+
+// ══ USER MANAGEMENT (admin only) ══════════════════════════════
+
+// POST create new user
+router.post('/users', auth, async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Only admins can create user accounts.' });
+  }
+
+  const { email, password, full_name, role, phone } = req.body;
+
+  if (!email || !password || !full_name || !role) {
+    return res.status(400).json({ error: 'email, password, full_name and role are required.' });
+  }
+
+  const validRoles = ['admin', 'security', 'manager', 'reception'];
+  if (!validRoles.includes(role)) {
+    return res.status(400).json({ error: 'Invalid role.' });
+  }
+
+  if (password.length < 8) {
+    return res.status(400).json({ error: 'Password must be at least 8 characters.' });
+  }
+
+  try {
+    const bcrypt = require('bcrypt');
+    const hash   = await bcrypt.hash(password, 12);
+
+    const { rows } = await pool.query(
+      `INSERT INTO users (email, password_hash, full_name, role, phone, is_active)
+       VALUES ($1,$2,$3,$4,$5,true)
+       RETURNING user_id, email, full_name, role, phone, created_at`,
+      [email.toLowerCase().trim(), hash, full_name, role, phone || null]
+    );
+
+    // Audit log
+    await pool.query(
+      `INSERT INTO audit_log (user_id, action, target_table, target_id, new_values)
+       VALUES ($1,'CREATE_USER','users',$2,$3)`,
+      [req.user.userId, String(rows[0].user_id), JSON.stringify({ email, full_name, role })]
+    );
+
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    if (err.code === '23505') {
+      return res.status(409).json({ error: 'An account with this email already exists.' });
+    }
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH toggle user active/inactive
+router.patch('/users/:id/toggle', auth, async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Only admins can modify user accounts.' });
+  }
+  try {
+    const { rows } = await pool.query(
+      `UPDATE users SET is_active = NOT is_active, updated_at = now()
+       WHERE user_id = $1 RETURNING user_id, email, full_name, role, is_active`,
+      [req.params.id]
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'User not found.' });
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
 

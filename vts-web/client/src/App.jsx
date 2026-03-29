@@ -6,6 +6,7 @@ import CheckIn   from './pages/CheckIn';
 import Cards     from './pages/Cards';
 import Logs      from './pages/Logs';
 import Layout    from './components/Layout';
+import Users from './pages/Users';
 
 function Protected({ children }) {
   const { user } = useAuth();
@@ -24,6 +25,7 @@ export default function App() {
             <Route path="checkin"   element={<CheckIn />} />
             <Route path="cards"     element={<Cards />} />
             <Route path="logs"      element={<Logs />} />
+            <Route path="users" element={<Users />} />
           </Route>
         </Routes>
       </BrowserRouter>
