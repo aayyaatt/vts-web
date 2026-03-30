@@ -7,6 +7,7 @@ import Cards     from './pages/Cards';
 import Logs      from './pages/Logs';
 import Layout    from './components/Layout';
 import Users from './pages/Users';
+import Departments from './pages/Departments';
 
 function Protected({ children }) {
   const { user } = useAuth();
@@ -26,6 +27,7 @@ export default function App() {
             <Route path="cards"     element={<Cards />} />
             <Route path="logs"      element={<Logs />} />
             <Route path="users" element={<Users />} />
+            <Route path="departments" element={<Departments />} />
           </Route>
         </Routes>
       </BrowserRouter>

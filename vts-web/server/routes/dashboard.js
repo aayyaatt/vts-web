@@ -21,18 +21,23 @@ router.get('/stats', auth, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+
 router.get('/active-visits', auth, async (req, res) => {
   try {
     const { rows } = await pool.query(`
       SELECT
-        v.visit_id, v.status, v.check_in_time, v.host_employee, v.purpose, v.notes,
+        v.visit_id, v.status, v.check_in_time, v.host_employee,
+        v.purpose, v.notes, v.floor,
         vi.full_name AS visitor_name, vi.cpr_number, vi.phone, vi.company,
         ac.card_uid,
+        d.name AS department_name,
         u.full_name AS issued_by_name,
         EXTRACT(EPOCH FROM (now() - v.check_in_time))/60 AS duration_minutes
       FROM visits v
-      JOIN visitors    vi ON vi.visitor_id = v.visitor_id
+      JOIN visitors    vi ON vi.visitor_id  = v.visitor_id
       LEFT JOIN access_cards ac ON ac.card_id = v.card_id
+      LEFT JOIN departments  d  ON d.department_id = v.department_id
       JOIN users       u  ON u.user_id = v.issued_by
       WHERE v.status IN ('active', 'overstay')
       ORDER BY v.check_in_time ASC

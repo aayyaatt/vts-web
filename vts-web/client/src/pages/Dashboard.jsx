@@ -111,14 +111,15 @@ export default function Dashboard() {
             <table className={styles.table}>
               <thead>
                 <tr>
-                  <th>Visitor</th>
-                  <th>Card</th>
-                  <th>Host</th>
-                  <th>Purpose</th>
-                  <th>Check-In</th>
-                  <th>Duration</th>
-                  <th>Status</th>
-                  <th></th>
+                <th>Visitor</th>
+                <th>Card</th>
+                <th>Department</th>
+                <th>Floor</th>
+                <th>Host</th>
+                <th>Check-In</th>
+                <th>Duration</th>
+                <th>Status</th>
+                <th></th>
                 </tr>
               </thead>
               <tbody>
@@ -128,6 +129,8 @@ export default function Dashboard() {
                       <div className={styles.cpr}>{v.cpr_number}</div>
                     </td>
                     <td><span className="badge badge-blue">{v.card_uid || '—'}</span></td>
+                    <td style={{fontSize:13}}>{v.department_name || '—'}</td>
+                    <td style={{fontFamily:'var(--mono)',fontSize:12,color:'var(--blue)'}}>{v.floor || '—'}</td>
                     <td className="dim">{v.host_employee || '—'}</td>
                     <td className="dim">{v.purpose || '—'}</td>
                     <td className="mono" style={{fontSize:12}}>

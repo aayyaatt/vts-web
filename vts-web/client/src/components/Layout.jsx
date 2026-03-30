@@ -11,7 +11,9 @@ export default function Layout() {
     { to: '/checkin',   icon: '✚',  label: 'Check-In'  },
     { to: '/cards',     icon: '🪪', label: 'Cards'     },
     { to: '/logs',      icon: '📋', label: 'Access Logs'},
-    ...(user?.role === 'admin' ? [{ to: '/users', icon: '👥', label: 'Users' }] : []),
+    ...(user?.role === 'admin' ? [
+    { to: '/users', icon: '👥', label: 'Users' }] : []),
+    { to: '/departments', icon: '🏢', label: 'Departments' },
   ];
 
   async function handleLogout() {

@@ -68,25 +68,33 @@ router.get('/visits', auth, async (req, res) => {
     res.json(rows);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
-
 // POST create new visit (check-in)
 router.post('/visits', auth, async (req, res) => {
-  const { visitor_id, card_id, host_employee, purpose, notes } = req.body;
+  const { visitor_id, card_id, host_employee, purpose, notes, department_id } = req.body;
   if (!visitor_id) return res.status(400).json({ error: 'visitor_id is required.' });
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
 
-    // Insert visit
+    // Look up floor from department
+    let floor = null;
+    if (department_id) {
+      const dRes = await client.query(
+        `SELECT floor FROM departments WHERE department_id = $1`,
+        [department_id]
+      );
+      floor = dRes.rows[0]?.floor || null;
+    }
+
+    // Insert visit with department and floor
     const { rows } = await client.query(
-      `INSERT INTO visits (visitor_id, card_id, host_employee, purpose, notes, issued_by)
-       VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-      [visitor_id, card_id || null, host_employee, purpose, notes, req.user.userId]
+      `INSERT INTO visits (visitor_id, card_id, host_employee, purpose, notes, issued_by, department_id, floor)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+      [visitor_id, card_id || null, host_employee, purpose, notes, req.user.userId, department_id || null, floor]
     );
     const visit = rows[0];
 
-    // Mark card as assigned
     if (card_id) {
       await client.query(
         `UPDATE access_cards SET status='assigned', visitor_id=$1 WHERE card_id=$2`,
@@ -94,62 +102,14 @@ router.post('/visits', auth, async (req, res) => {
       );
     }
 
-    // Audit
     await client.query(
       `INSERT INTO audit_log (user_id, action, target_table, target_id, new_values)
        VALUES ($1,'CHECKIN','visits',$2,$3)`,
-      [req.user.userId, visit.visit_id, JSON.stringify({ visitor_id, card_id, host_employee, purpose })]
+      [req.user.userId, visit.visit_id, JSON.stringify({ visitor_id, card_id, host_employee, purpose, department_id, floor })]
     );
 
     await client.query('COMMIT');
     res.status(201).json(visit);
-  } catch (err) {
-    await client.query('ROLLBACK');
-    res.status(500).json({ error: err.message });
-  } finally {
-    client.release();
-  }
-});
-
-// PATCH check-out
-router.patch('/visits/:id/checkout', auth, async (req, res) => {
-  const { id } = req.params;
-  const client  = await pool.connect();
-  try {
-    await client.query('BEGIN');
-
-    const { rows } = await client.query(
-      `UPDATE visits
-       SET check_out_time=now(), status='completed', checked_out_by=$1
-       WHERE visit_id=$2 AND status IN ('active','overstay')
-       RETURNING *`,
-      [req.user.userId, id]
-    );
-
-    if (rows.length === 0) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({ error: 'Visit not found or already checked out.' });
-    }
-
-    const visit = rows[0];
-
-    // Release card
-    if (visit.card_id) {
-      await client.query(
-        `UPDATE access_cards SET status='available', visitor_id=NULL WHERE card_id=$1`,
-        [visit.card_id]
-      );
-    }
-
-    // Audit
-    await client.query(
-      `INSERT INTO audit_log (user_id, action, target_table, target_id)
-       VALUES ($1,'CHECKOUT','visits',$2)`,
-      [req.user.userId, id]
-    );
-
-    await client.query('COMMIT');
-    res.json(visit);
   } catch (err) {
     await client.query('ROLLBACK');
     res.status(500).json({ error: err.message });
@@ -216,7 +176,7 @@ router.post('/visits-from-form', async (req, res) => {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  const { full_name, cpr_number, phone, email, company, host_employee, purpose } = req.body;
+  const { full_name, cpr_number, phone, email, company, host_employee, purpose, department } = req.body;
   if (!full_name || !cpr_number) {
     return res.status(400).json({ error: 'full_name and cpr_number are required.' });
   }
@@ -225,6 +185,7 @@ router.post('/visits-from-form', async (req, res) => {
   try {
     await client.query('BEGIN');
 
+    // Upsert visitor
     const vRes = await client.query(
       `INSERT INTO visitors (full_name, cpr_number, phone, email, company)
        VALUES ($1,$2,$3,$4,$5)
@@ -235,23 +196,42 @@ router.post('/visits-from-form', async (req, res) => {
     );
     const visitor_id = vRes.rows[0].visitor_id;
 
+    // Look up department by name and get floor
+    let department_id = null;
+    let floor = null;
+    if (department) {
+      const dRes = await client.query(
+        `SELECT department_id, floor FROM departments
+         WHERE LOWER(name) = LOWER($1) AND is_active = true`,
+        [department]
+      );
+      if (dRes.rows.length > 0) {
+        department_id = dRes.rows[0].department_id;
+        floor         = dRes.rows[0].floor;
+      }
+    }
+
+    // Get next available card
     const cardRes = await client.query(
       `SELECT card_id FROM access_cards
        WHERE status='available' ORDER BY card_id ASC LIMIT 1 FOR UPDATE SKIP LOCKED`
     );
     const card_id = cardRes.rows[0]?.card_id || null;
 
+    // Get first admin user
     const userRes = await client.query(
       `SELECT user_id FROM users WHERE role='admin' LIMIT 1`
     );
     const issued_by = userRes.rows[0]?.user_id;
 
+    // Create visit
     await client.query(
-      `INSERT INTO visits (visitor_id, card_id, host_employee, purpose, issued_by)
-       VALUES ($1,$2,$3,$4,$5)`,
-      [visitor_id, card_id, host_employee||null, purpose||null, issued_by]
+      `INSERT INTO visits (visitor_id, card_id, host_employee, purpose, issued_by, department_id, floor)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [visitor_id, card_id, host_employee||null, purpose||null, issued_by, department_id, floor]
     );
 
+    // Mark card assigned
     if (card_id) {
       await client.query(
         `UPDATE access_cards SET status='assigned', visitor_id=$1 WHERE card_id=$2`,
@@ -260,7 +240,7 @@ router.post('/visits-from-form', async (req, res) => {
     }
 
     await client.query('COMMIT');
-    res.json({ success: true, visitor_id, card_id });
+    res.json({ success: true, visitor_id, card_id, floor });
 
   } catch (err) {
     await client.query('ROLLBACK');
@@ -269,6 +249,7 @@ router.post('/visits-from-form', async (req, res) => {
     client.release();
   }
 });
+
 
 // ══ USER MANAGEMENT (admin only) ══════════════════════════════
 
@@ -336,6 +317,64 @@ router.patch('/users/:id/toggle', auth, async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// ══ DEPARTMENTS ════════════════════════════════════════════════
+
+// GET all departments
+router.get('/departments', auth, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT * FROM departments ORDER BY floor, name`
+    );
+    res.json(rows);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST create department (admin only)
+router.post('/departments', auth, async (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin only.' });
+  const { name, floor, description } = req.body;
+  if (!name || !floor) return res.status(400).json({ error: 'name and floor are required.' });
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO departments (name, floor, description)
+       VALUES ($1,$2,$3) RETURNING *`,
+      [name, floor, description || null]
+    );
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    if (err.code === '23505') return res.status(409).json({ error: 'Department already exists.' });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH update department (admin only)
+router.patch('/departments/:id', auth, async (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin only.' });
+  const { name, floor, description, is_active } = req.body;
+  try {
+    const { rows } = await pool.query(
+      `UPDATE departments SET
+         name        = COALESCE($1, name),
+         floor       = COALESCE($2, floor),
+         description = COALESCE($3, description),
+         is_active   = COALESCE($4, is_active)
+       WHERE department_id = $5 RETURNING *`,
+      [name, floor, description, is_active, req.params.id]
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Department not found.' });
+    res.json(rows[0]);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// DELETE department (admin only)
+router.delete('/departments/:id', auth, async (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin only.' });
+  try {
+    await pool.query(`DELETE FROM departments WHERE department_id = $1`, [req.params.id]);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 module.exports = router;
