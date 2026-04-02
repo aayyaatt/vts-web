@@ -4,12 +4,11 @@ import api from '../api';
 const PURPOSES = ['Business Meeting', 'Interview', 'Maintenance / Repair', 'Delivery', 'Government Official', 'Other'];
 
 // ── Shared Visit Details Form ─────────────────────────────────
-function VisitDetailsForm({ departments, onChange }) {
-  const [host,    setHost]    = useState('');
-  const [purpose, setPurpose] = useState('');
-  const [deptId,  setDeptId]  = useState('');
-  const [notes,   setNotes]   = useState('');
-
+function VisitDetailsForm({ departments, onChange, initial = {} }) {
+  const [host,    setHost]    = useState(initial.host_employee || '');
+  const [purpose, setPurpose] = useState(initial.purpose       || '');
+  const [deptId,  setDeptId]  = useState(initial.department_id ? String(initial.department_id) : '');
+  const [notes,   setNotes]   = useState(initial.notes         || '');
   useEffect(() => {
     onChange({ host_employee: host, purpose, department_id: deptId || null, notes });
   }, [host, purpose, deptId, notes]);
@@ -247,7 +246,22 @@ function ReturningVisitorForm({ visitor, onBack, onContinue }) {
   const [error,       setError]       = useState('');
 
   useEffect(() => { api.get('/departments').then(r => setDepartments(r.data.filter(d => d.is_active))); }, []);
-
+ 
+  <VisitDetailsForm
+  departments={departments}
+  onChange={setVisitData}
+  initial={{
+    host_employee: visitor.pre_host        || '',
+    purpose:       visitor.pre_purpose     || '',
+    department_id: visitor.pre_department_id || '',
+    notes:         '',
+  }}
+/>
+{visitor.pre_status === 'pending' && (
+  <div style={{ background:'rgba(56,139,253,.08)', border:'1px solid rgba(56,139,253,.2)', borderRadius:8, padding:'10px 14px', fontSize:13, color:'var(--blue)', marginBottom:16 }}>
+    ℹ️ This visitor pre-registered via Google Forms. Details have been auto-filled — review and confirm.
+  </div>
+)}
   function handleSubmit(e) {
     e.preventDefault();
     if (!visitData.host_employee || !visitData.purpose) { setError('Host employee and purpose are required.'); return; }

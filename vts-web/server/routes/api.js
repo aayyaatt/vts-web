@@ -8,9 +8,20 @@ const auth    = require('../middleware/auth');
 // GET all visitors
 router.get('/visitors', auth, async (req, res) => {
   try {
-    const { rows } = await pool.query(
-      `SELECT * FROM visitors ORDER BY created_at DESC LIMIT 100`
-    );
+    const { rows } = await pool.query(`
+      SELECT
+        v.*,
+        pr.host_employee  AS pre_host,
+        pr.purpose        AS pre_purpose,
+        pr.department_id  AS pre_department_id,
+        pr.floor          AS pre_floor,
+        pr.status         AS pre_status,
+        d.name            AS pre_department_name
+      FROM visitors v
+      LEFT JOIN pre_registrations pr ON pr.visitor_id = v.visitor_id AND pr.status = 'pending'
+      LEFT JOIN departments d ON d.department_id = pr.department_id
+      ORDER BY v.created_at DESC LIMIT 100
+    `);
     res.json(rows);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -49,32 +60,67 @@ router.post('/visitors/check-cpr', auth, async (req, res) => {
 // ══ VISITS ═════════════════════════════════════════════════════
 
 // GET all visits (with visitor + card info)
+
 router.get('/visits', auth, async (req, res) => {
-  const { status } = req.query;
+  const { status, visit_id } = req.query;
   try {
+    let whereClause = '';
+    let params = [];
+
+    if (visit_id) {
+      whereClause = 'WHERE v.visit_id = $1';
+      params = [visit_id];
+    } else if (status) {
+      whereClause = 'WHERE v.status = $1';
+      params = [status];
+    }
+
     const { rows } = await pool.query(`
       SELECT
         v.visit_id, v.status, v.check_in_time, v.check_out_time,
-        v.host_employee, v.purpose, v.notes,
+        v.host_employee, v.purpose, v.notes, v.floor,
         vi.full_name AS visitor_name, vi.cpr_number, vi.company,
         ac.card_uid,
+        d.name AS department_name,
         EXTRACT(EPOCH FROM (COALESCE(v.check_out_time, now()) - v.check_in_time))/60 AS duration_minutes
       FROM visits v
       JOIN visitors vi ON vi.visitor_id = v.visitor_id
       LEFT JOIN access_cards ac ON ac.card_id = v.card_id
-      ${status ? 'WHERE v.status=$1' : ''}
+      LEFT JOIN departments d ON d.department_id = v.department_id
+      ${whereClause}
       ORDER BY v.check_in_time DESC LIMIT 200
-    `, status ? [status] : []);
+    `, params);
     res.json(rows);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
+
+// GET visits by visitor ID
+router.get('/visits/by-visitor/:visitor_id', auth, async (req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT
+        v.visit_id, v.status, v.check_in_time, v.check_out_time,
+        v.host_employee, v.purpose, v.notes, v.floor,
+        ac.card_uid,
+        d.name AS department_name,
+        EXTRACT(EPOCH FROM (COALESCE(v.check_out_time, now()) - v.check_in_time))/60 AS duration_minutes
+      FROM visits v
+      LEFT JOIN access_cards ac ON ac.card_id = v.card_id
+      LEFT JOIN departments d ON d.department_id = v.department_id
+      WHERE v.visitor_id = $1
+      ORDER BY v.check_in_time DESC
+    `, [req.params.visitor_id]);
+    res.json(rows);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // POST create new visit (check-in)
 router.post('/visits', auth, async (req, res) => {
   const { visitor_id, card_id, host_employee, purpose, notes, department_id } = req.body;
   if (!visitor_id) return res.status(400).json({ error: 'visitor_id is required.' });
 
   const client = await pool.connect();
-  try {
+  try {            
     await client.query('BEGIN');
 
     // Look up floor from department
@@ -116,6 +162,75 @@ router.post('/visits', auth, async (req, res) => {
   } finally {
     client.release();
   }
+});
+
+// PATCH check-out
+router.patch('/visits/:id/checkout', auth, async (req, res) => {
+  const { id } = req.params;
+  console.log('[CHECKOUT] visit:', id, 'by user:', req.user.userId);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const { rows } = await client.query(
+      `UPDATE visits
+       SET check_out_time = now(), status = 'completed', checked_out_by = $1
+       WHERE visit_id = $2 AND status IN ('active', 'overstay')
+       RETURNING *`,
+      [req.user.userId, id]
+    );
+
+    if (rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Visit not found or already checked out.' });
+    }
+
+    const visit = rows[0];
+
+    // Release card back to pool
+    if (visit.card_id) {
+      await client.query(
+        `UPDATE access_cards SET status = 'available', visitor_id = NULL WHERE card_id = $1`,
+        [visit.card_id]
+      );
+    }
+
+    // Audit log
+    await client.query(
+      `INSERT INTO audit_log (user_id, action, target_table, target_id)
+       VALUES ($1, 'CHECKOUT', 'visits', $2)`,
+      [req.user.userId, id]
+    );
+
+    await client.query('COMMIT');
+    res.json(visit);
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('[CHECKOUT] Error:', err.message);
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// GET visits by visitor ID
+router.get('/visits/by-visitor/:visitor_id', auth, async (req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT
+        v.visit_id, v.status, v.check_in_time, v.check_out_time,
+        v.host_employee, v.purpose, v.notes, v.floor,
+        ac.card_uid,
+        d.name AS department_name,
+        EXTRACT(EPOCH FROM (COALESCE(v.check_out_time, now()) - v.check_in_time))/60 AS duration_minutes
+      FROM visits v
+      LEFT JOIN access_cards ac ON ac.card_id = v.card_id
+      LEFT JOIN departments d ON d.department_id = v.department_id
+      WHERE v.visitor_id = $1
+      ORDER BY v.check_in_time DESC
+    `, [req.params.visitor_id]);
+    res.json(rows);
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // ══ CARDS ══════════════════════════════════════════════════════
@@ -169,7 +284,6 @@ router.get('/users', auth, async (req, res) => {
 
 
 // ══ GOOGLE FORMS SUBMISSION ════════════════════════════════════
-
 router.post('/visits-from-form', async (req, res) => {
   const apiKey = req.headers['x-api-key'];
   if (apiKey !== process.env.FORM_API_KEY) {
@@ -185,18 +299,7 @@ router.post('/visits-from-form', async (req, res) => {
   try {
     await client.query('BEGIN');
 
-    // Upsert visitor
-    const vRes = await client.query(
-      `INSERT INTO visitors (full_name, cpr_number, phone, email, company)
-       VALUES ($1,$2,$3,$4,$5)
-       ON CONFLICT (cpr_number) DO UPDATE
-         SET full_name=$1, phone=$3, email=$4, company=$5, updated_at=now()
-       RETURNING visitor_id`,
-      [full_name, cpr_number, phone||null, email||null, company||null]
-    );
-    const visitor_id = vRes.rows[0].visitor_id;
-
-    // Look up department by name and get floor
+    // Look up department
     let department_id = null;
     let floor = null;
     if (department) {
@@ -211,36 +314,30 @@ router.post('/visits-from-form', async (req, res) => {
       }
     }
 
-    // Get next available card
-    const cardRes = await client.query(
-      `SELECT card_id FROM access_cards
-       WHERE status='available' ORDER BY card_id ASC LIMIT 1 FOR UPDATE SKIP LOCKED`
+    // Upsert visitor only — no visit or card assignment
+    const vRes = await client.query(
+      `INSERT INTO visitors (full_name, cpr_number, phone, email, company)
+       VALUES ($1,$2,$3,$4,$5)
+       ON CONFLICT (cpr_number) DO UPDATE
+         SET full_name=$1, phone=$3, email=$4, company=$5, updated_at=now()
+       RETURNING *`,
+      [full_name, cpr_number, phone||null, email||null, company||null]
     );
-    const card_id = cardRes.rows[0]?.card_id || null;
 
-    // Get first admin user
-    const userRes = await client.query(
-      `SELECT user_id FROM users WHERE role='admin' LIMIT 1`
-    );
-    const issued_by = userRes.rows[0]?.user_id;
-
-    // Create visit
+    // Store pre-registration details on the visitor record temporarily
+    // so security can see them when the visitor arrives
     await client.query(
-      `INSERT INTO visits (visitor_id, card_id, host_employee, purpose, issued_by, department_id, floor)
-       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-      [visitor_id, card_id, host_employee||null, purpose||null, issued_by, department_id, floor]
+      `INSERT INTO pre_registrations
+         (visitor_id, host_employee, purpose, department_id, floor, status)
+       VALUES ($1,$2,$3,$4,$5,'pending')
+       ON CONFLICT (visitor_id) DO UPDATE
+         SET host_employee=$2, purpose=$3, department_id=$4, floor=$5,
+             status='pending', created_at=now()`,
+      [vRes.rows[0].visitor_id, host_employee||null, purpose||null, department_id, floor]
     );
-
-    // Mark card assigned
-    if (card_id) {
-      await client.query(
-        `UPDATE access_cards SET status='assigned', visitor_id=$1 WHERE card_id=$2`,
-        [visitor_id, card_id]
-      );
-    }
 
     await client.query('COMMIT');
-    res.json({ success: true, visitor_id, card_id, floor });
+    res.json({ success: true, visitor: vRes.rows[0], message: 'Visitor registered. Security will complete check-in.' });
 
   } catch (err) {
     await client.query('ROLLBACK');
@@ -249,7 +346,6 @@ router.post('/visits-from-form', async (req, res) => {
     client.release();
   }
 });
-
 
 // ══ USER MANAGEMENT (admin only) ══════════════════════════════
 
