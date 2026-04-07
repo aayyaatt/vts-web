@@ -120,10 +120,26 @@ router.post('/visits', auth, async (req, res) => {
   if (!visitor_id) return res.status(400).json({ error: 'visitor_id is required.' });
 
   const client = await pool.connect();
-  try {            
+  try {
     await client.query('BEGIN');
 
-    // Look up floor from department
+    // ── Check for existing active visit ──────────────────────
+    const activeCheck = await client.query(
+      `SELECT visit_id, card_id FROM visits
+       WHERE visitor_id = $1 AND status IN ('active', 'overstay')
+       LIMIT 1`,
+      [visitor_id]
+    );
+
+    if (activeCheck.rows.length > 0) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: 'This visitor is already checked in and currently inside the building. Please check them out first.',
+        active_visit_id: activeCheck.rows[0].visit_id
+      });
+    }
+
+    // ── Get floor from department ─────────────────────────────
     let floor = null;
     if (department_id) {
       const dRes = await client.query(
@@ -133,11 +149,12 @@ router.post('/visits', auth, async (req, res) => {
       floor = dRes.rows[0]?.floor || null;
     }
 
-    // Insert visit with department and floor
+    // ── Insert visit ──────────────────────────────────────────
     const { rows } = await client.query(
       `INSERT INTO visits (visitor_id, card_id, host_employee, purpose, notes, issued_by, department_id, floor)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-      [visitor_id, card_id || null, host_employee, purpose, notes, req.user.userId, department_id || null, floor]
+      [visitor_id, card_id || null, host_employee, purpose, notes,
+       req.user.userId, department_id || null, floor]
     );
     const visit = rows[0];
 
@@ -148,10 +165,18 @@ router.post('/visits', auth, async (req, res) => {
       );
     }
 
+    // Mark pre-registration as completed if exists
+    await client.query(
+      `UPDATE pre_registrations SET status='completed'
+       WHERE visitor_id = $1 AND status = 'pending'`,
+      [visitor_id]
+    );
+
     await client.query(
       `INSERT INTO audit_log (user_id, action, target_table, target_id, new_values)
        VALUES ($1,'CHECKIN','visits',$2,$3)`,
-      [req.user.userId, visit.visit_id, JSON.stringify({ visitor_id, card_id, host_employee, purpose, department_id, floor })]
+      [req.user.userId, visit.visit_id,
+       JSON.stringify({ visitor_id, card_id, host_employee, purpose, department_id, floor })]
     );
 
     await client.query('COMMIT');
@@ -469,6 +494,70 @@ router.delete('/departments/:id', auth, async (req, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin only.' });
   try {
     await pool.query(`DELETE FROM departments WHERE department_id = $1`, [req.params.id]);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ══ CARD MANAGEMENT ════════════════════════════════════════════
+
+// POST add new card (admin only)
+router.post('/cards', auth, async (req, res) => {
+  if (req.user.role !== 'admin' && req.user.role !== 'manager') {
+    return res.status(403).json({ error: 'Admin or manager only.' });
+  }
+  const { card_uid } = req.body;
+  if (!card_uid) return res.status(400).json({ error: 'card_uid is required.' });
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO access_cards (card_uid, status)
+       VALUES ($1, 'available') RETURNING *`,
+      [card_uid.trim()]
+    );
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    if (err.code === '23505') return res.status(409).json({ error: 'A card with this UID already exists.' });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH update card status (admin only)
+router.patch('/cards/:id', auth, async (req, res) => {
+  if (req.user.role !== 'admin' && req.user.role !== 'manager') {
+    return res.status(403).json({ error: 'Admin or manager only.' });
+  }
+  const { status, card_uid } = req.body;
+  const validStatuses = ['available', 'assigned', 'lost', 'retired'];
+  if (status && !validStatuses.includes(status)) {
+    return res.status(400).json({ error: 'Invalid status.' });
+  }
+  try {
+    const { rows } = await pool.query(
+      `UPDATE access_cards
+       SET status   = COALESCE($1, status),
+           card_uid = COALESCE($2, card_uid)
+       WHERE card_id = $3 RETURNING *`,
+      [status || null, card_uid || null, req.params.id]
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Card not found.' });
+    res.json(rows[0]);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// DELETE card (admin only — only if available or retired)
+router.delete('/cards/:id', auth, async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Admin only.' });
+  }
+  try {
+    const check = await pool.query(
+      `SELECT status FROM access_cards WHERE card_id = $1`,
+      [req.params.id]
+    );
+    if (check.rows.length === 0) return res.status(404).json({ error: 'Card not found.' });
+    if (check.rows[0].status === 'assigned') {
+      return res.status(409).json({ error: 'Cannot delete a card that is currently assigned to a visitor.' });
+    }
+    await pool.query(`DELETE FROM access_cards WHERE card_id = $1`, [req.params.id]);
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
