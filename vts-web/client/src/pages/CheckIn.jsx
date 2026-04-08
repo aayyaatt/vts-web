@@ -169,7 +169,7 @@ function NewVisitorForm({ departments, onBack, onDone }) {
       try {
         const { data } = await api.post('/visitors/check-cpr',{ cpr_number:form.cpr_number });
         if(data.flagged){ setCprStatus('flagged'); setFlagInfo(data.flag); }
-        else { setCprStatus('ok'); setFlagInfo(null); }
+
       } catch { setCprStatus(null); }
     },600);
     return ()=>clearTimeout(t);
