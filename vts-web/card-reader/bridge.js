@@ -233,7 +233,7 @@ psProcess = spawn('C:\\Windows\\SysWOW64\\WindowsPowerShell\\v1.0\\powershell.ex
       console.log('[PS]', line);
 
       if (line.startsWith('TYPE:')) {
-        console.log('[SDK] Using class:', line.slice(5));on cpr
+        console.log('[SDK] Using class:', line.slice(5));
 
       } else if (line.startsWith('METHOD:')) {
         // Log available methods silently for debugging
