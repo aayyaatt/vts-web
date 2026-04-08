@@ -94,7 +94,6 @@ function MainPage({ preVisitors, allVisitors, departments, loading, onSelectPre,
     <div style={{ padding:24,maxWidth:960,margin:'0 auto' }} className="fade-in">
       <div style={{ marginBottom:24 }}>
         <h1 style={{ fontSize:20,fontWeight:700 }}>Check-In</h1>
-        <p style={{ fontSize:13,color:'var(--dim)',marginTop:3 }}>Select a pre-registered visitor or check in a walk-in.</p>
       </div>
 
       {/* Pre-registered section */}
