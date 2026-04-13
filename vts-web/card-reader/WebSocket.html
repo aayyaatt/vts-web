@@ -1,0 +1,326 @@
+﻿<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <title>Reading Smartcard Using WebSockets</title>
+
+    <!--CSS-->
+    <!--Adds scrolling to the incoming chat pane.-->
+    <style type="text/css">
+        #chatPane {
+            border-style: inset;
+            border-color: inherit;
+            border-width: 2px;
+            height: 100px;
+            width: 843px;
+            overflow: auto;
+            padding: 5px;
+            margin-bottom: 5px;
+        }
+
+        #txtServerURL {
+            width: 386px;
+        }
+    </style>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.4/jquery.min.js"></script>
+
+    <script type="text/javascript">
+        var ws;
+        function WebSocketOpen() {
+            if ("WebSocket" in window) {
+
+                // Let us open a web socket
+                ws = new WebSocket($("#txtServerURL").val());
+
+                ws.onopen = function () {
+                    // Web Socket is connected, send data using send()
+                    //alert("Web Socket is connected");
+                };
+
+                ws.onmessage = function (evt) {
+                    var received_msg = evt.data;
+                    displayChatMessage("Received : " + received_msg);
+                    //alert("Message is received..." + received_msg);
+
+
+                    console.log(received_msg);
+                    //console.log(message.search("ReaderNames"));
+                    //console.log(message.search("Sent : GetReaderNames"));
+                    if (received_msg.search("ReaderNames") != -1 && received_msg.search("GetReaderNames") == -1) {
+                        console.log('found');
+                        $('#rnSelect')
+                            .find('option')
+                            .remove()
+                            .end()
+                            .append('<option value="-1"></option>');
+                        var rnp = JSON.parse(received_msg).ReaderNames;
+                        console.log(rnp.length);
+                        rnp.forEach(function (name) {
+                            console.log(name);
+                            $('#rnSelect')
+                                .find('option')
+                                .end()
+                                .append('<option value="' + name + '">' + name + '</option>');
+                        });
+                    }
+
+                };
+
+                ws.onclose = function () {
+                    // websocket is closed.
+                    displayChatMessage("Received : Connection Closed");
+                };
+            }
+
+            else {
+                // The browser doesn't support WebSocket
+                alert("WebSocket NOT supported by your Browser!");
+            }
+        }
+        // Displays a single chat message
+        function displayChatMessage(message) {
+            // Make the new chat message element
+            var msg = document.createElement("span");
+            msg.appendChild(document.createTextNode(message));
+            msg.appendChild(document.createElement("br"));
+
+            // Append the new message to the chat
+            var chatPane = document.getElementById("chatPane");
+            chatPane.appendChild(msg);
+
+            // Trim the chat to 500 messages
+            if (chatPane.childNodes.length > 500) {
+                chatPane.removeChild(chatPane.firstChild);
+            }
+            chatPane.scrollTop = chatPane.scrollHeight;
+            //if (message.ReaderNames)
+
+
+            //console.log(rnp.ReaderNames);
+        }
+        function sendMessage() {
+            var sentmsg = jQuery.trim($("#txtMessage").val());
+
+            if (sentmsg.length > 0) {
+                displayChatMessage("Sent : " + sentmsg)
+                ws.send(sentmsg);
+            }
+        }
+        function btnRunCardDetection() {
+            var sentmsg = "RunCardDetection";
+
+            if (sentmsg.length > 0) {
+                displayChatMessage("Sent : " + sentmsg)
+                ws.send(sentmsg);
+            }
+        }
+        function btnCancelCardDetection() {
+            var sentmsg = "CancelCardDetection";
+
+            if (sentmsg.length > 0) {
+                displayChatMessage("Sent : " + sentmsg)
+                ws.send(sentmsg);
+            }
+        }
+        function btnGetReaderNames() {
+            var sentmsg = "GetReaderNames";
+
+            if (sentmsg.length > 0) {
+                displayChatMessage("Sent : " + sentmsg)
+                ws.send(sentmsg);
+            }
+        }
+        function SendSCardReadCard() {
+
+            var sentmsg = "ReadCard" + JSON.stringify(
+                {
+                    "ReadCardInfo": $("#chkReadCardInfo").is(':checked'),
+                    "ReadPersonalInfo": $("#chkReadPersonalInfo").is(':checked'),
+                    "ReadAddressDetails": $("#chkReadAddressDetails").is(':checked'),
+                    "ReadBiometrics": $("#chkReadBiometrics").is(':checked'),
+                    "ReadEmploymentInfo": $("#chkReadEmploymentInfo").is(':checked'),
+                    "ReadImmigrationDetails": $("#chkReadImmigrationDetails").is(':checked'),
+                    "ReadTrafficDetails": $("#chkReadTrafficDetails").is(':checked'),
+                    "SilentReading": false,
+                    //"ReaderIndex": -1,
+                    //"ReaderName": "",
+                    "ReaderIndex": -1,
+                    "ReaderName": $("#rnSelect :selected").text(),
+                    "OutputFormat": $("#sltOutputFormat :selected").text()
+                });
+            displayChatMessage("Sent : " + sentmsg);
+            ws.send(sentmsg);
+        }
+        function WebSocketClose() {
+            ws.close();
+        }
+    </script>
+</head>
+
+<body>
+    <table cellpadding="0" cellspacing="0" style="border: solid 1px gray;" width="99%" align="center">
+        <tr>
+            <td style="background-color: green; color: yellow; height: 30px; font-size: 16pt; font-family: Georgia; text-align: center;">Reading Smartcard Using WebSockets</td>
+        </tr>
+        <tr>
+            <td style="vertical-align: top; text-align: left;">
+                <table cellpadding="2" cellspacing="2" style="font-family: Calibri; font-size: 14px; border: none 1px gray; width: 100%; text-align: left; background-color: lightgray">
+                    <thead style="background-color: steelblue; color: White; font-weight: bold">
+                        <tr style="border: solid 1px darkblue;">
+                            <td colspan="2"><b>Connection</b></td>
+                        </tr>
+                    </thead>
+
+                    <tr>
+                        <td>
+                            WebSockets Server URL :
+                        </td>
+                        <td style="text-align: left;">
+                            <input id="txtServerURL" type="text" value="ws://localhost:5060/SCardRead" style="font-weight: bold" />
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>
+                            <input type="button" id="btnConnect" onclick="javascript: WebSocketOpen()" value="Connect" style="font-family: Verdana, Geneva, Tahoma, sans-serif; font-size: 15px; font-weight: bolder; height: 36px;" />
+                        </td>
+                        <td style="text-align: left;">
+                            <input type="button" id="btnDisconnect" onclick="javascript: WebSocketClose()" value="Disconnect" style="font-family: Verdana, Geneva, Tahoma, sans-serif; font-size: 15px; font-weight: bolder; height: 36px;" />
+                        </td>
+                    </tr>
+                    <tr>
+                        <td colspan="2">
+                            <table cellpadding="2" cellspacing="2" style="font-family: Calibri; font-size: 14px; border: none 1px gray; width: 100%; text-align: left; background-color: lightgray">
+                                <thead style="background-color: steelblue; color: White; font-weight: bold">
+                                    <tr style="border: solid 1px darkblue;">
+                                        <td colspan="2"><b>Smartcard Options</b></td>
+                                    </tr>
+                                </thead>
+                                <tr>
+                                    <td style="width: 20%">
+                                        &nbsp;
+                                    </td>
+                                    <td style="text-align: left;">
+                                        &nbsp;
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td>
+                                        <input type="button" id="btnRunCardDetection" onclick="javascript: btnRunCardDetection()" value="Run Card Detection" style="font-family: Verdana, Geneva, Tahoma, sans-serif; font-size: 15px; font-weight: bolder; height: 36px;" />
+                                    </td>
+                                    <td style="text-align: left;">
+                                        <input type="button" id="btnGetReaderNames" onclick="javascript: btnGetReaderNames()" value="Get Reader Names" style="font-family: Verdana, Geneva, Tahoma, sans-serif; font-size: 15px; font-weight: bolder; height: 36px; width: 241px;" />
+                                        <select class="rnSelect" name="rnSelect" id="rnSelect">
+                                            <option value="-1"></option>
+                                        </select>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td>
+                                        <input type="button" id="btnCancelCardDetection" onclick="javascript: btnCancelCardDetection()" value="Cancel Card Detection" style="font-family: Verdana, Geneva, Tahoma, sans-serif; font-size: 15px; font-weight: bolder; height: 36px; width: 241px;" />
+                                    </td>
+                                    <td style="text-align: left;">
+                                        &nbsp;
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td>
+                                        &nbsp;
+                                    </td>
+                                    <td style="text-align: left;">
+                                        &nbsp;
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td colspan="2">
+                            <table cellpadding="2" cellspacing="2" style="font-family: Calibri; font-size: 14px; border: none 1px gray; width: 100%; text-align: left; background-color: lightgray">
+                                <thead style="background-color: steelblue; color: White; font-weight: bold">
+                                    <tr style="border: solid 1px darkblue;">
+                                        <td colspan="2"><b>Smartcard Reading</b></td>
+                                    </tr>
+                                </thead>
+                                <tr>
+                                    <td style="width: 20%">
+                                        <input id="chkCardInfo" type="checkbox" />Read Card Informations
+                                    </td>
+                                    <td style="text-align: left;">
+                                        <input id="chkReadBiometrics" type="checkbox" />Read Biometrics
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td>
+                                        <input id="chkReadPersonalInfo" type="checkbox" />Read Personal Informations
+                                    </td>
+                                    <td style="text-align: left;">
+                                        <input id="chkReadEmploymentInfo" type="checkbox" />Read Employment Info
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td>
+                                        <input id="chkReadAddressDetails" type="checkbox" />Read Address Details
+                                    </td>
+                                    <td style="text-align: left;">
+                                        <input id="chkReadImmigrationDetails" type="checkbox" />Read Immigration Details
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td>
+                                        <input id="chkReadTrafficDetails" type="checkbox" />Read Traffic Details
+                                    </td>
+                                    <td style="text-align: left;">
+                                        Output Format :
+                                        <select id="sltOutputFormat" name="D1">
+                                            <option>JSON</option>
+                                            <option>XML</option>
+                                        </select>&nbsp;
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>
+                            <input type="button" id="btnSCardSend" onclick="javascript: SendSCardReadCard()" value="Send Read Command" style="font-family: Verdana, Geneva, Tahoma, sans-serif; font-size: 15px; font-weight: bolder; height: 36px;" />
+                        </td>
+                        <td></td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+        <tr>
+            <td>
+                <table id="tbDetails1" cellpadding="2" cellspacing="2" width="100%" style="table-layout: fixed; border: none 1px darkgray; font-family: Calibri; font-size: 14px;">
+                    <thead style="background-color: steelblue; color: white; font-weight: bold">
+                        <tr style="border: solid 1px darkblue;">
+                            <td colspan="2"><b>SCard Communication</b></td>
+                        </tr>
+                    </thead>
+                </table>
+            </td>
+        </tr>
+        <tr>
+            <td>
+
+                <table id="tbDetails" cellpadding="2" cellspacing="2" width="100%" style="table-layout: fixed; border: solid 1px darkgray; font-family: Consolas; font-size: 13px;">
+                    <thead style="background-color: lightgray; color: black; font-weight: bold">
+                        <tr style="border: solid 1px lightgray" align="left">
+                            <td>
+                                <!--The outgoing chat form-->
+                                <div>
+                                    <input id="txtMessage" type="text" id="outgoing" style="width: 782px" onkeydown="if (event.keyCode == 13) sendMessage()" />
+                                    <input id="btnSendMessage" type="submit" value="Send" style="width: 60px" onclick="sendMessage()" />
+                                </div>
+                                <!--Contains the incoming chat messages-->
+                                <div style="height: 250px" id="chatPane"></div>
+                            </td>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </td>
+        </tr>
+    </table>
+
+</body>
+</html>

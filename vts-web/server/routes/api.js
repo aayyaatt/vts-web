@@ -11,12 +11,14 @@ router.get('/visitors', auth, async (req, res) => {
     const { rows } = await pool.query(`
       SELECT
         v.*,
-        pr.host_employee  AS pre_host,
-        pr.purpose        AS pre_purpose,
-        pr.department_id  AS pre_department_id,
-        pr.floor          AS pre_floor,
-        pr.status         AS pre_status,
-        d.name            AS pre_department_name
+        pr.host_employee AS pre_host, pr.purpose AS pre_purpose,
+        pr.department_id AS pre_department_id, pr.floor AS pre_floor,
+        pr.status AS pre_status, d.name AS pre_department_name,
+        EXISTS (
+          SELECT 1 FROM visits vt
+          WHERE vt.visitor_id = v.visitor_id
+          AND vt.status IN ('active','overstay')
+        ) AS is_active_visit
       FROM visitors v
       LEFT JOIN pre_registrations pr ON pr.visitor_id = v.visitor_id AND pr.status = 'pending'
       LEFT JOIN departments d ON d.department_id = pr.department_id
@@ -558,6 +560,19 @@ router.delete('/cards/:id', auth, async (req, res) => {
       return res.status(409).json({ error: 'Cannot delete a card that is currently assigned to a visitor.' });
     }
     await pool.query(`DELETE FROM access_cards WHERE card_id = $1`, [req.params.id]);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST card issue report (sent to audit log for admin review)
+router.post('/visits/card-report', auth, async (req, res) => {
+  const { card_uid, visitor_name, cpr_number, note } = req.body;
+  try {
+    await pool.query(
+      `INSERT INTO audit_log (user_id, action, target_table, new_values)
+       VALUES ($1, 'CARD_ISSUE_REPORT', 'access_cards', $2)`,
+      [req.user.userId, JSON.stringify({ card_uid, visitor_name, cpr_number, note, reported_at: new Date() })]
+    );
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });

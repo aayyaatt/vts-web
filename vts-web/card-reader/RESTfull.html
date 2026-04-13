@@ -1,0 +1,188 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Reading Smartcard Using RESTfull Service</title>
+    <style>
+        img {
+            height: 100px;
+            float: left;
+        }
+
+        #btnReadSmartcard {
+            height: 54px;
+        }
+    </style>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.4/jquery.min.js"></script>
+    <script type="text/javascript">
+        $(function () {
+            $('#tbDetails').hide();
+            $('#btnReadSmartcard').click(function () {
+                $.support.cors = true;				
+                $("#btnReadSmartcard").prop('value', 'Please wait...');
+                $('#btnReadSmartcard').prop("disabled", true);
+                $.ajax({
+                    type: "POST",
+                    url: $("#txtServerURL").val(),
+                    // dataType: "json",
+                    data: JSON.stringify(
+                        {
+                            "ReadCardInfo": $("#chkReadCardInfo").is(':checked'),
+                            "ReadPersonalInfo": $("#chkReadPersonalInfo").is(':checked'),
+                            "ReadAddressDetails": $("#chkReadAddressDetails").is(':checked'),
+                            "ReadBiometrics": $("#chkReadBiometrics").is(':checked'),
+                            "ReadEmploymentInfo": $("#chkReadEmploymentInfo").is(':checked'),
+                            "ReadImmigrationDetails": $("#chkReadImmigrationDetails").is(':checked'),
+                            "ReadTrafficDetails": $("#chkReadTrafficDetails").is(':checked'),
+                            "SilentReading": false,
+                            "ReaderIndex": -1,
+                            "ReaderName": "",
+                            "OutputFormat": $("#sltOutputFormat :selected").text(),
+                            "ValidateCard": $("#chkValidateCard").is(':checked')
+                        }),
+                    success: function (data) {
+                        $("#btnReadSmartcard").prop('value', 'Read Smartcard');
+                        $('#btnReadSmartcard').prop("disabled", false);
+                        $("#tbDetails").find("tr:gt(0)").remove();
+                        if ($("#sltOutputFormat :selected").text() == "XML") {
+                            $('<tr><td style="border: solid 1px lightgray;width: 100%" colspan="2"><textarea rows="50" cols="50" style="height:200px; width:100%">' + data + '</textarea></td></tr>').appendTo('#tbDetails');
+                        }
+                        else {
+                            var jsonData = JSON.stringify(data);
+                            var objData = $.parseJSON(jsonData);
+                            $.each(objData, function (k, v) {
+                                if (k == "MiscellaneousTextData" || k == "MiscellaneousBinaryData") {
+                                    var misc = "<table>";
+                                    $.each(v, function (k1, v1) {
+                                        misc += '<tr><td style="border: solid 1px lightgray;width: 20%"><b>' + k1 + '</b></td><td style="width: 80%;word-wrap: break-word; border: solid 1px lightgray">' + v1 + '</td></tr>';
+                                    });
+                                    misc += "</table>"
+                                    $('<tr><td style="border: solid 1px lightgray;width: 20%"><b>' + k + '</b></td><td style="width: 80%;word-wrap: break-word; border: solid 1px lightgray">' + misc + '</td></tr>').appendTo('#tbDetails');
+                                }
+                                else
+                                    $('<tr><td style="border: solid 1px lightgray;width: 20%">' + k + '</b></td><td style="width: 80%;word-wrap: break-word; border: solid 1px lightgray">' + v + '</td></tr>').appendTo('#tbDetails');
+                            });
+                        }
+                        $('#tbDetails').show();
+
+                    },
+                    error: function (xhr, tst, err) {
+                        $("#btnReadSmartcard").prop('value', 'Read Smartcard');
+                        $('#btnReadSmartcard').prop("disabled", false);
+                        alert('error :' + xhr.responseText);
+                    }
+                });
+            });
+        });
+    </script>
+</head>
+<body>
+    <form id="form1" runat="server">
+        <table cellpadding="0" cellspacing="0" style="border: solid 1px gray;" width="99%" align="center">
+            <tr>
+                <td style="background-color: green; color: yellow; height: 30px; font-size: 16pt; font-family: Georgia; text-align: center;">Reading Smartcard Using RESTfull Service</td>
+            </tr>
+            <tr>
+                <td style="vertical-align: top; text-align: left;">
+                    <table cellpadding="2" cellspacing="2" style="font-family: Calibri; font-size: 14px; border: none 1px gray; width: 100%; text-align: left; background-color: lightgray">
+                        <thead style="background-color: steelblue; color: White; font-weight: bold">
+                            <tr style="border: solid 1px darkblue;">
+                                <td colspan="2"><b>CPR Card Reading Options</b></td>
+                            </tr>
+                        </thead>
+                        <tr>
+                            <td style="width: 20%">RESTfull Server URL :</td>
+                            <td style="text-align: left;">
+                                <input id="txtServerURL" type="text" value="http://localhost:5050/api/operation/ReadCard" style="font-weight: bold; width: 300px;" />
+
+                            </td>
+                        </tr>
+                        <tr>
+                            <td style="width: 20%">
+                                <input id="chkCardInfo" type="checkbox" />Read Card Informations
+                            </td>
+                            <td style="text-align: left;">
+                                <input id="chkReadBiometrics" type="checkbox" />Read Biometrics
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>
+                                <input id="chkReadPersonalInfo" type="checkbox" />Read Personal Informations
+                            </td>
+                            <td style="text-align: left;">
+                                <input id="chkReadEmploymentInfo" type="checkbox" />Read Employment Info
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>
+                                <input id="chkReadAddressDetails" type="checkbox" />Read Address Details
+                            </td>
+                            <td style="text-align: left;">
+                                <input id="chkReadImmigrationDetails" type="checkbox" />Read Immigration Details
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>
+                                <input id="chkReadTrafficDetails" type="checkbox" />Read Traffic Details
+                            </td>
+                            <td style="text-align: left;">
+                                Output Format :
+                                <select id="sltOutputFormat" name="D1">
+                                    <option>JSON</option>
+                                    <option>XML</option>
+                                </select>&nbsp;
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>
+                                &nbsp;
+                            </td>
+                            <td style="text-align: left;">
+                                <input id="chkValidateCard" type="checkbox" />Validate Card
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>
+                                <br />
+                                <input type="button" height="50" id="btnReadSmartcard" value="Read Smartcard" style="font-family: Verdana, Geneva, Tahoma, sans-serif; font-size: 15px; font-weight: bolder;" />
+                            </td>
+                            <td style="text-align: left;">&nbsp;</td>
+                        </tr>
+                        <tr>
+                            <td>
+                                &nbsp;
+                            </td>
+                            <td style="text-align: left;">&nbsp;</td>
+                        </tr>
+                    </table>
+                </td>
+            </tr>
+            <tr>
+                <td>
+                    <br />
+                </td>
+            </tr>
+            <tr>
+                <td>
+                    <table id="tbDetails1" cellpadding="2" cellspacing="2" width="100%" style="table-layout: fixed; border: none 1px darkgray; font-family: Calibri; font-size: 14px;">
+                        <thead style="background-color: steelblue; color: white; font-weight: bold">
+                            <tr style="border: solid 1px darkblue;">
+                                <td colspan="2"><b>Smartcard Data</b></td>
+                            </tr>
+                        </thead>
+                    </table>
+                    <table id="tbDetails" cellpadding="2" cellspacing="2" width="100%" style="table-layout: fixed; border: solid 1px darkgray; font-family: Consolas; font-size: 13px;">
+                        <thead style="background-color: lightgray; color: black; font-weight: bold">
+                            <tr style="border: solid 1px lightgray">
+                                <td style="width: 20%"><b>Field</b></td>
+                                <td style="width: 80%"><b>Value</b></td>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </td>
+            </tr>
+        </table>
+    </form>
+</body>
+</html>
