@@ -50,6 +50,29 @@ function VisitDetailsForm({ departments, onChange, required = {} }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
 
+        
+        {/* Department — required */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <label style={l}>DEPARTMENT *</label>
+          <select value={deptId} onChange={e => setDeptId(e.target.value)} required style={{ ...s, borderColor: !deptId ? 'var(--border)' : 'var(--border2)' }}>
+            <option value="">— Select Department —</option>
+            {departments.map(d => (
+              <option key={d.department_id} value={d.department_id}>
+                {d.name} — {d.floor}
+              </option>
+            ))}
+          </select>
+          {!deptId && <p style={{ fontSize: 11, color: 'var(--amber)', margin: 0 }}></p>}
+        </div>
+
+        {/* Floor — auto-filled */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <label style={l}>FLOOR (AUTO-FILLED)</label>
+          <div style={{ ...s, color: dept ? 'var(--blue)' : 'var(--faint)', border: '1px solid var(--border)', fontFamily: 'var(--mono)', fontWeight: dept ? 600 : 400 }}>
+            {dept ? dept.floor : '— Select a department —'}
+          </div>
+        </div>
+
         {/* Host Employee — optional */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <label style={l}>HOST EMPLOYEE <span style={{ color: 'var(--dim)', fontSize: 9 }}>(OPTIONAL)</span></label>
@@ -67,7 +90,8 @@ function VisitDetailsForm({ departments, onChange, required = {} }) {
             <textarea
               value={otherPurpose}
               onChange={handleOtherPurpose}
-              placeholder="Please describe the purpose… (2 lines max)"
+              placeholder="Please describe the purpose…"
+              maxLength={200}
               rows={2}
               required
               style={{ ...s, resize: 'none', marginTop: 4 }}
@@ -75,27 +99,6 @@ function VisitDetailsForm({ departments, onChange, required = {} }) {
           )}
         </div>
 
-        {/* Department — required */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <label style={l}>DEPARTMENT *</label>
-          <select value={deptId} onChange={e => setDeptId(e.target.value)} required style={{ ...s, borderColor: !deptId ? 'rgba(240,160,52,.4)' : 'var(--border2)' }}>
-            <option value="">— Select Department —</option>
-            {departments.map(d => (
-              <option key={d.department_id} value={d.department_id}>
-                {d.name} — {d.floor}
-              </option>
-            ))}
-          </select>
-          {!deptId && <p style={{ fontSize: 11, color: 'var(--amber)', margin: 0 }}>Department is required</p>}
-        </div>
-
-        {/* Floor — auto-filled */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <label style={l}>FLOOR (AUTO-FILLED)</label>
-          <div style={{ ...s, color: dept ? 'var(--blue)' : 'var(--faint)', border: '1px solid var(--border)', fontFamily: 'var(--mono)', fontWeight: dept ? 600 : 400 }}>
-            {dept ? dept.floor : '— Select a department —'}
-          </div>
-        </div>
       </div>
 
       {/* Notes — 3 lines max */}
@@ -429,112 +432,104 @@ function WalkInDetailsForm({ visitor, departments, onBack, onDone }) {
 }
 
 // ── Card Assignment (Round Robin) ─────────────────────────────
-function CardAssignment({ visitor, departments, onBack, onDone }) {
-  const [assignedCard,  setAssignedCard]  = useState(null);
-  const [assigning,     setAssigning]     = useState(true);
-  const [assignError,   setAssignError]   = useState(null); 
-  const [confirmed,     setConfirmed]     = useState(false);
-  const [reportMode,    setReportMode]    = useState(false);
-  const [reportNote,    setReportNote]    = useState('');
-  const [reportSent,    setReportSent]    = useState(false);
-  const [submitting,    setSubmitting]    = useState(false);
-  const [visitError,    setVisitError]    = useState('');
 
-  const dept     = departments.find(d => String(d.department_id) === String(visitor.department_id));
+function CardAssignment({ visitor, departments, onBack, onDone }) {const [assignedCard, setAssignedCard] = useState(null);
+  const [assigning, setAssigning] = useState(true);
+  const [assignError, setAssignError] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [visitError, setVisitError] = useState('');
+  const [skipping, setSkipping] = useState(false);
+
+  // ── Background Time Logic ──────────────────
+  // We keep these as internal helpers to send to the API without showing them in the UI
+  const getNowStr = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  const getPlus8hStr = () => new Date(Date.now() + 8 * 3600000 - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+
+  const dept = departments.find(d => String(d.department_id) === String(visitor.department_id));
   const deptName = visitor.department_name || dept?.name || null;
-  const floor    = visitor.floor           || dept?.floor || null;
+  const floor = visitor.floor || dept?.floor || null;
 
-  // Auto-assign on mount using Round Robin
-  useEffect(() => {
-    assignRoundRobin();
-  }, []);
+  useEffect(() => { assignRoundRobin(); }, []);
 
-  async function assignRoundRobin() {
+  async function assignRoundRobin(excludeId = null) {
     setAssigning(true);
     setAssignError(null);
     try {
       const { data: cards } = await api.get('/cards');
       const available = cards
-        .filter(c => c.status === 'available')
+        .filter(c => c.status === 'available' && (!excludeId || c.card_id !== excludeId))
         .sort((a, b) => (a.total_uses || 0) - (b.total_uses || 0));
-
-      if (available.length === 0) {
-        setAssignError('no_cards');
-        setAssigning(false);
-        return;
-      }
-
+      if (available.length === 0) { setAssignError('no_cards'); setAssigning(false); return; }
       setAssignedCard(available[0]);
       setAssigning(false);
-    } catch {
-      setAssignError('failed');
-      setAssigning(false);
-    }
+    } catch { setAssignError('failed'); setAssigning(false); }
   }
 
   async function handleConfirm() {
     if (!assignedCard) return;
-    setSubmitting(true);
-    setVisitError('');
+    setSubmitting(true); setVisitError('');
     try {
+      // 1. Ensure visitor exists/is updated
       const vRes = await api.post('/visitors', {
-        full_name:  visitor.full_name,
-        cpr_number: visitor.cpr_number,
-        phone:      visitor.phone   || null,
-        email:      visitor.email   || null,
-        company:    visitor.company || null,
+        full_name: visitor.full_name, cpr_number: visitor.cpr_number,
+        phone: visitor.phone || null, email: visitor.email || null,
+        company: visitor.company || null,
       });
 
+      // 2. Create visit with automatic 8-hour window
       await api.post('/visits', {
-        visitor_id:    vRes.data.visitor_id,
-        card_id:       assignedCard.card_id,
+        visitor_id: vRes.data.visitor_id,
+        card_id: assignedCard.card_id,
         host_employee: visitor.host_employee || null,
-        purpose:       visitor.purpose       || null,
-        notes:         visitor.notes         || null,
+        purpose: visitor.purpose || null,
+        notes: visitor.notes || null,
         department_id: visitor.department_id || null,
+        valid_from: getNowStr(),
+        valid_until: getPlus8hStr(),
       });
-
-      setConfirmed(true);
+      
       onDone({ visitor: { ...visitor, department_name: deptName, floor }, card: assignedCard });
-    } catch (err) {
-      setVisitError(err.response?.data?.error || 'Check-in failed.');
+    } catch (err) { 
+      setVisitError(err.response?.data?.error || 'Check-in failed.'); 
     }
     setSubmitting(false);
   }
 
-  async function handleReport() {
-    if (!reportNote.trim()) return;
+  async function handleFastSkip() {
+    if (!assignedCard || skipping) return;
+    setSkipping(true);
     try {
-      // Log the card issue to audit log via a lightweight endpoint
-      await api.post('/visits/card-report', {
-        card_uid:    assignedCard?.card_uid || 'Unknown',
-        visitor_name:visitor.full_name,
-        cpr_number:  visitor.cpr_number,
-        note:        reportNote,
+      const { data } = await api.post('/cards/skip', {
+        card_id: assignedCard.card_id,
+        reason: 'other' 
       });
-    } catch {}
-    setReportSent(true);
+      if (data.next_card) setAssignedCard(data.next_card);
+      else assignRoundRobin(assignedCard.card_id);
+    } catch { setVisitError('Failed to skip card.'); }
+    setSkipping(false);
   }
-
-  const s = { background: 'var(--panel2)', border: '1px solid var(--border2)', borderRadius: 7, padding: '9px 12px', fontSize: 13, color: 'var(--text)', fontFamily: 'var(--sans)', outline: 'none', width: '100%' };
 
   return (
     <div style={{ padding: 24, maxWidth: 700, margin: '0 auto' }} className="fade-in">
-      <button onClick={onBack} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: 'var(--blue)', fontSize: 13, cursor: 'pointer', fontFamily: 'var(--sans)', marginBottom: 20, padding: 0 }}>← Back</button>
+      <button onClick={onBack} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: 'var(--blue)', fontSize: 13, cursor: 'pointer', fontFamily: 'var(--sans)', marginBottom: 20, padding: 0 }}>
+        ← Back
+      </button>
+
       <h1 style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>Card Assignment</h1>
       <p style={{ fontSize: 13, color: 'var(--dim)', marginBottom: 24 }}>
-        Assign an access card to <strong style={{ color: 'var(--text)' }}>{visitor.full_name}</strong>
+        Assigning card for <strong style={{ color: 'var(--text)' }}>{visitor.full_name}</strong>
       </p>
 
       {visitError && (
-        <div style={{ background: 'rgba(248,81,73,.1)', border: '1px solid rgba(248,81,73,.3)', borderRadius: 8, padding: '12px 16px', fontSize: 13, color: 'var(--red)', marginBottom: 20 }}>⛔ {visitError}</div>
+        <div style={{ background: 'rgba(248,81,73,.1)', border: '1px solid rgba(248,81,73,.3)', borderRadius: 8, padding: '12px 16px', fontSize: 13, color: 'var(--red)', marginBottom: 20 }}>
+          ⛔ {visitError}
+        </div>
       )}
 
-      {/* Visit summary */}
+      {/* Simplified Visit Summary */}
       <div style={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 10, padding: 18, marginBottom: 20 }}>
-        <p style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--dim)', letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 12 }}>Visit Summary</p>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          {[['Visitor', visitor.full_name], ['CPR', visitor.cpr_number], ['Host', visitor.host_employee || '—'], ['Purpose', visitor.purpose || '—'], ['Department', deptName || '—'], ['Floor', floor || '—']].map(([label, value]) => (
+          {[['Visitor', visitor.full_name], ['CPR', visitor.cpr_number], ['Department', deptName || '—'], ['Floor', floor || '—']].map(([label, value]) => (
             <div key={label}>
               <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--dim)', letterSpacing: '.08em' }}>{label.toUpperCase()}</span>
               <div style={{ fontSize: 13, marginTop: 2, color: label === 'Floor' ? 'var(--blue)' : 'var(--text)', fontWeight: label === 'Floor' ? 600 : 400 }}>{value}</div>
@@ -543,86 +538,32 @@ function CardAssignment({ visitor, departments, onBack, onDone }) {
         </div>
       </div>
 
-      {/* Card assignment state */}
       {assigning ? (
-        <div style={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 10, padding: 32, textAlign: 'center', color: 'var(--dim)' }}>
-          <div style={{ fontSize: 24, marginBottom: 8 }}>⏳</div>
-          <div style={{ fontSize: 14, fontWeight: 600 }}>Assigning card … </div>
-        </div>
-
-      ) : assignError === 'no_cards' ? (
-        <div style={{ background: 'rgba(240,160,52,.08)', border: '1px solid rgba(240,160,52,.25)', borderRadius: 10, padding: 24, textAlign: 'center', color: 'var(--amber)' }}>
-          ⚠ No access cards available. Please return a card before checking in a new visitor.
-        </div>
-
-      ) : assignError === 'failed' ? (
-        <div style={{ background: 'rgba(248,81,73,.08)', border: '1px solid rgba(248,81,73,.25)', borderRadius: 10, padding: 24, textAlign: 'center', color: 'var(--red)' }}>
-          ❌ Failed to fetch cards. Check server connection.
-          <button onClick={assignRoundRobin} style={{ marginTop: 12, display: 'block', margin: '12px auto 0', padding: '7px 16px', borderRadius: 7, background: 'var(--blue)', color: '#fff', border: 'none', fontSize: 13, cursor: 'pointer', fontFamily: 'var(--sans)' }}>Retry</button>
-        </div>
-
-      ) : assignedCard && !reportMode ? (
+        <div style={{ textAlign: 'center', padding: 32, color: 'var(--dim)' }}>⏳ Selecting card…</div>
+      ) : assignedCard ? (
         <>
-          {/* Assigned card visual */}
-          <div style={{ background: 'linear-gradient(135deg,#1a2f5c,#0d1a3a)', border: '1px solid rgba(56,139,253,.3)', borderRadius: 12, padding: 22, marginBottom: 20, position: 'relative', overflow: 'hidden' }}>
-            <div style={{ position: 'absolute', top: 14, right: 14, width: 28, height: 20, background: 'linear-gradient(135deg,var(--amber),#c8780a)', borderRadius: 3, opacity: .8 }} />
-            <div style={{ fontSize: 10, fontFamily: 'var(--mono)', color: 'rgba(255,255,255,.4)', marginBottom: 6 }}>ASSIGNED CARD — ROUND ROBIN</div>
-            <div style={{ fontFamily: 'var(--mono)', fontSize: 26, fontWeight: 600, color: 'var(--blue)', letterSpacing: '.1em', marginBottom: 4 }}>{assignedCard.card_uid}</div>
-            <div style={{ fontSize: 12, color: 'var(--dim)' }}>Total uses: {assignedCard.total_uses || 0} · Assigned to: {visitor.full_name}</div>
+          <div style={{ background: 'linear-gradient(135deg,#1a2f5c,#0d1a3a)', border: '1px solid rgba(56,139,253,.3)', borderRadius: 12, padding: 22, marginBottom: 24, textAlign: 'center' }}>
+            <div style={{ fontSize: 10, fontFamily: 'var(--mono)', color: 'rgba(255,255,255,.4)', marginBottom: 8, letterSpacing: '.1em' }}>ASSIGNED CARD UID</div>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: 36, fontWeight: 800, color: 'var(--blue)', letterSpacing: '.15em' }}>{assignedCard.card_uid}</div>
           </div>
-
-          <p style={{ fontSize: 13, color: 'var(--dim)', marginBottom: 16, textAlign: 'center' }}>
-            Hand card <strong style={{ color: 'var(--blue)' }}>{assignedCard.card_uid}</strong> to the visitor, then confirm below.
-          </p>
 
           <div style={{ display: 'flex', gap: 12 }}>
             <button onClick={handleConfirm} disabled={submitting}
-              style={{ flex: 1, padding: 13, borderRadius: 8, background: submitting ? 'var(--panel2)' : 'var(--green)', color: submitting ? 'var(--dim)' : '#000', border: 'none', fontSize: 14, fontWeight: 700, cursor: submitting ? 'not-allowed' : 'pointer', fontFamily: 'var(--sans)' }}>
-              {submitting ? 'Confirming…' : `✅ Card ${assignedCard.card_uid} was handed to visitor`}
+              style={{ flex: 1, padding: 16, borderRadius: 10, background: submitting ? 'var(--panel2)' : 'var(--green)', color: '#000', border: 'none', fontSize: 15, fontWeight: 700, cursor: 'pointer' }}>
+              {submitting ? 'Confirming...' : `Finalize Check-In`}
             </button>
-            <button onClick={() => setReportMode(true)}
-              style={{ padding: '13px 18px', borderRadius: 8, background: 'rgba(248,81,73,.1)', color: 'var(--red)', border: '1px solid rgba(248,81,73,.3)', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--sans)', whiteSpace: 'nowrap' }}>
-              ⚠ Card wasn't assigned
+            <button onClick={handleFastSkip} disabled={skipping}
+              style={{ padding: '0 24px', borderRadius: 10, background: 'rgba(240,160,52,.1)', color: 'var(--amber)', border: '1px solid rgba(240,160,52,.3)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+              {skipping ? '...' : 'Skip'}
             </button>
           </div>
-        </>
-
-      ) : reportMode && !reportSent ? (
-        /* Report form */
-        <div style={{ background: 'var(--panel)', border: '1px solid rgba(248,81,73,.25)', borderRadius: 10, padding: 22 }}>
-          <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--red)', marginBottom: 4 }}>⚠ Report Card Issue</h3>
-          <p style={{ fontSize: 13, color: 'var(--dim)', marginBottom: 16 }}>
-            Card <strong style={{ color: 'var(--text)' }}>{assignedCard?.card_uid}</strong> was not successfully assigned. Please describe what happened so an admin can investigate.
+          <p style={{ textAlign: 'center', fontSize: 11, color: 'var(--dim)', marginTop: 16 }}>
+            Note: Visit expires in 8 hours automatically.
           </p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <label style={{ fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '.1em', color: 'var(--dim)' }}>WHAT HAPPENED? *</label>
-            <textarea
-              value={reportNote}
-              onChange={e => setReportNote(e.target.value)}
-              rows={4}
-              placeholder={`Examples:\n- Card assigned but reader didn't respond\n- Error appeared: "Card not detected"\n- Card was taken but system showed error`}
-              style={{ ...s, resize: 'vertical' }}
-            />
-          </div>
-          <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
-            <button onClick={() => setReportMode(false)}
-              style={{ padding: '8px 18px', borderRadius: 7, fontSize: 13, fontFamily: 'var(--sans)', cursor: 'pointer', background: 'transparent', border: '1px solid var(--border2)', color: 'var(--dim)' }}>
-              Cancel
-            </button>
-            <button onClick={handleReport} disabled={!reportNote.trim()}
-              style={{ flex: 1, padding: '8px 18px', borderRadius: 7, fontSize: 13, fontWeight: 600, fontFamily: 'var(--sans)', cursor: reportNote.trim() ? 'pointer' : 'not-allowed', background: reportNote.trim() ? 'var(--red)' : 'var(--panel2)', color: reportNote.trim() ? '#fff' : 'var(--dim)', border: 'none' }}>
-              Send Report to Admin
-            </button>
-          </div>
-        </div>
-
-      ) : reportSent ? (
-        <div style={{ background: 'rgba(63,185,80,.06)', border: '1px solid rgba(63,185,80,.25)', borderRadius: 10, padding: 24, textAlign: 'center' }}>
-          <div style={{ fontSize: 32, marginBottom: 10 }}>✅</div>
-          <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--green)', marginBottom: 6 }}>Report sent to admin</div>
-          <div style={{ fontSize: 13, color: 'var(--dim)' }}>The admin has been notified about the card issue.</div>
-        </div>
-      ) : null}
+        </>
+      ) : (
+        <div style={{ textAlign: 'center', color: 'var(--amber)' }}>No cards available in system.</div>
+      )}
     </div>
   );
 }

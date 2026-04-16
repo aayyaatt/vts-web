@@ -23,25 +23,35 @@ router.get('/stats', auth, async (req, res) => {
 });
 
 
+// routes/dashboard.js (or wherever your dashboard routes are)
+
 router.get('/active-visits', auth, async (req, res) => {
   try {
     const { rows } = await pool.query(`
       SELECT
-        v.visit_id, v.status, v.check_in_time, v.host_employee,
-        v.purpose, v.notes, v.floor,
-        vi.full_name AS visitor_name, vi.cpr_number, vi.phone, vi.company,
+        v.visit_id, 
+        v.status, 
+        v.check_in_time, 
+        v.host_employee, 
+        v.floor,
+        vi.full_name AS visitor_name, 
+        vi.cpr_number,
         ac.card_uid,
         d.name AS department_name,
-        u.full_name AS issued_by_name,
-        EXTRACT(EPOCH FROM (now() - v.check_in_time))/60 AS duration_minutes
+        u.full_name AS checked_in_by_name, -- 1. Added this
+        EXTRACT(EPOCH FROM (COALESCE(v.check_out_time, now()) - v.check_in_time))/60 AS duration_minutes
       FROM visits v
-      JOIN visitors    vi ON vi.visitor_id  = v.visitor_id
+      JOIN visitors vi ON vi.visitor_id = v.visitor_id
       LEFT JOIN access_cards ac ON ac.card_id = v.card_id
-      LEFT JOIN departments  d  ON d.department_id = v.department_id
-      JOIN users       u  ON u.user_id = v.issued_by
+      LEFT JOIN departments d ON d.department_id = v.department_id
+      LEFT JOIN users u ON u.user_id = v.issued_by -- 2. Added this JOIN
       WHERE v.status IN ('active', 'overstay')
-      ORDER BY v.check_in_time ASC
+      ORDER BY v.check_in_time DESC
     `);
+    
+    // Debugging line
+    console.log("Dashboard Rows:", rows[0]); 
+    
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });

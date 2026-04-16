@@ -149,43 +149,50 @@ export default function Visitors() {
             ) : visits.length === 0 ? (
               <div style={{ padding: '30px 0', textAlign: 'center', color: 'var(--dim)', fontSize: 13 }}>No visits recorded yet.</div>
             ) : (
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr>
-                    {['Date', 'Department', 'Floor', 'Host', 'Card', 'Duration', 'Status'].map(h => (
-                      <th key={h} style={{ fontFamily: 'var(--mono)', fontSize: 11, letterSpacing: '.08em', color: 'var(--dim)', textAlign: 'left', padding: '9px 16px', borderBottom: '1px solid var(--border)', background: 'rgba(255,255,255,.02)', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {visits.map((v, i) => (
-                    <tr key={i}
-                      onMouseEnter={e => e.currentTarget.style.background = 'rgba(56,139,253,.04)'}
-                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                      <td style={{ padding: '11px 16px', fontFamily: 'var(--mono)', fontSize: 12, borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' }}>
-                        {new Date(v.check_in_time).toLocaleDateString('en-GB')}
-                        <div style={{ fontSize: 10, color: 'var(--dim)' }}>
-                          {new Date(v.check_in_time).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
-                        </div>
-                      </td>
-                      <td style={{ padding: '11px 16px', fontSize: 13, borderBottom: '1px solid var(--border)' }}>{v.department_name || '—'}</td>
-                      <td style={{ padding: '11px 16px', fontSize: 12, fontFamily: 'var(--mono)', color: 'var(--blue)', borderBottom: '1px solid var(--border)', fontWeight: 600 }}>{v.floor || '—'}</td>
-                      <td style={{ padding: '11px 16px', fontSize: 13, color: 'var(--dim)', borderBottom: '1px solid var(--border)' }}>{v.host_employee || '—'}</td>
-                      <td style={{ padding: '11px 16px', borderBottom: '1px solid var(--border)' }}>
-                        <span className="badge badge-blue">{v.card_uid || '—'}</span>
-                      </td>
-                      <td style={{ padding: '11px 16px', fontSize: 12, fontFamily: 'var(--mono)', color: 'var(--dim)', borderBottom: '1px solid var(--border)' }}>
-                        {v.duration_minutes ? `${Math.round(v.duration_minutes)}m` : '—'}
-                      </td>
-                      <td style={{ padding: '11px 16px', borderBottom: '1px solid var(--border)' }}>
-                        {statusBadge(v.status)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+  <thead>
+    <tr>
+      {/* Added 'Staff' to the header array */}
+      {['Date', 'Department', 'Floor', 'Host', 'Card', 'Staff', 'Duration', 'Status'].map(h => (
+        <th key={h} style={{ fontFamily: 'var(--mono)', fontSize: 11, letterSpacing: '.08em', color: 'var(--dim)', textAlign: 'left', padding: '9px 16px', borderBottom: '1px solid var(--border)', background: 'rgba(255,255,255,.02)', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
+          {h}
+        </th>
+      ))}
+    </tr>
+  </thead>
+  <tbody>
+    {visits.map((v, i) => (
+      <tr key={i}
+        onMouseEnter={e => e.currentTarget.style.background = 'rgba(56,139,253,.04)'}
+        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+        <td style={{ padding: '11px 16px', fontFamily: 'var(--mono)', fontSize: 12, borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' }}>
+          {new Date(v.check_in_time).toLocaleDateString('en-GB')}
+          <div style={{ fontSize: 10, color: 'var(--dim)' }}>
+            {new Date(v.check_in_time).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+          </div>
+        </td>
+        <td style={{ padding: '11px 16px', fontSize: 13, borderBottom: '1px solid var(--border)' }}>{v.department_name || '—'}</td>
+        <td style={{ padding: '11px 16px', fontSize: 12, fontFamily: 'var(--mono)', color: 'var(--blue)', borderBottom: '1px solid var(--border)', fontWeight: 600 }}>{v.floor || '—'}</td>
+        <td style={{ padding: '11px 16px', fontSize: 13, color: 'var(--dim)', borderBottom: '1px solid var(--border)' }}>{v.host_employee || '—'}</td>
+        <td style={{ padding: '11px 16px', borderBottom: '1px solid var(--border)' }}>
+          <span className="badge badge-blue">{v.card_uid || '—'}</span>
+        </td>
+
+        {/* New Data Cell for Checked-in Staff Name */}
+        <td style={{ padding: '11px 16px', fontSize: 12, borderBottom: '1px solid var(--border)', color: 'var(--text)' }}>
+          {v.checked_in_by_name || '—'}
+        </td>
+
+        <td style={{ padding: '11px 16px', fontSize: 12, fontFamily: 'var(--mono)', color: 'var(--dim)', borderBottom: '1px solid var(--border)' }}>
+          {v.duration_minutes ? `${Math.round(v.duration_minutes)}m` : '—'}
+        </td>
+        <td style={{ padding: '11px 16px', borderBottom: '1px solid var(--border)' }}>
+          {statusBadge(v.status)}
+        </td>
+      </tr>
+    ))}
+  </tbody>
+</table>
             )}
           </div>
         </div>

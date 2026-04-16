@@ -76,6 +76,27 @@ async function runMigrations() {
   } finally {
     client.release();
   }
+
+  // Add this to your server/db/migrate.js inside the runMigrations() function
+// alongside your existing migrations
+
+// ── Visit validity window ─────────────────────────────────────
+await pool.query(`
+  ALTER TABLE visits
+    ADD COLUMN IF NOT EXISTS valid_from  TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS valid_until TIMESTAMPTZ
+`);
+
+// ── Card skip tracking ────────────────────────────────────────
+await pool.query(`
+  ALTER TABLE access_cards
+    ADD COLUMN IF NOT EXISTS last_note   TEXT,
+    ADD COLUMN IF NOT EXISTS skip_count  INTEGER DEFAULT 0
+`);
+
+console.log('[MIGRATE] visit validity + card skip columns ready');
+
 }
+
 
 module.exports = runMigrations;

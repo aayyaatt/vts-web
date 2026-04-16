@@ -108,52 +108,59 @@ export default function Dashboard() {
           <div className={styles.empty}>No active visitors at the moment.</div>
         ) : (
           <div className={styles.tableWrap}>
-            <table className={styles.table}>
-              <thead>
-                <tr>
-                <th>Visitor</th>
-                <th>Card</th>
-                <th>Department</th>
-                <th>Floor</th>
-                <th>Host</th>
-                <th>Check-In</th>
-                <th>Duration</th>
-                <th>Status</th>
-                <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {visits.map(v => (
-                  <tr key={v.visit_id} className={v.status === 'overstay' ? styles.overstayRow : ''}>
-                    <td><strong>{v.visitor_name}</strong>
-                      <div className={styles.cpr}>{v.cpr_number}</div>
-                    </td>
-                    <td><span className="badge badge-blue">{v.card_uid || '—'}</span></td>
-                    <td style={{fontSize:13}}>{v.department_name || '—'}</td>
-                    <td style={{fontFamily:'var(--mono)',fontSize:12,color:'var(--blue)'}}>{v.floor || '—'}</td>
-                    <td className="dim">{v.host_employee || '—'}</td>
-                    <td className="dim">{v.purpose || '—'}</td>
-                    <td className="mono" style={{fontSize:12}}>
-                      {new Date(v.check_in_time).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}
-                    </td>
-                    <td className={`mono ${v.status==='overstay' ? styles.overstayText : ''}`}
-                        style={{fontSize:12}}>
-                      {duration(v.duration_minutes)}
-                    </td>
-                    <td>{statusBadge(v.status)}</td>
-                    <td>
-                      <button
-                        className="btn-ghost-sm"
-                        onClick={() => handleCheckout(v.visit_id, v.visitor_name)}
-                        disabled={checking === v.visit_id}
-                      >
-                        {checking === v.visit_id ? '…' : 'Check Out'}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+<table className={styles.table}>
+        <thead>
+          <tr>
+            <th>Visitor</th>
+            <th>Card</th>
+            <th>Department</th>
+            <th>Floor</th>
+            <th>Host</th>
+            <th>Checked-In By</th>
+            <th>Check-In</th>
+            <th>Duration</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {visits.map(v => (
+            <tr key={v.visit_id} className={v.status === 'overstay' ? styles.overstayRow : ''}>
+              <td>
+                <strong>{v.visitor_name}</strong>
+                <div className={styles.cpr}>{v.cpr_number}</div>
+              </td>
+              <td><span className="badge badge-blue">{v.card_uid || '—'}</span></td>
+              <td style={{ fontSize: 13 }}>{v.department_name || '—'}</td>
+              <td style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--blue)' }}>{v.floor || '—'}</td>
+              <td className="dim">{v.host_employee || '—'}</td>
+
+              {/* 2. Added Staff Data Cell */}
+              <td className="dim" style={{ fontSize: 12 }}>
+                {v.checked_in_by_name || '—'}
+              </td>
+
+              <td className="mono" style={{ fontSize: 12 }}>
+                {new Date(v.check_in_time).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+              </td>
+              <td className={`mono ${v.status === 'overstay' ? styles.overstayText : ''}`}
+                style={{ fontSize: 12 }}>
+                {duration(v.duration_minutes)}
+              </td>
+              <td>{statusBadge(v.status)}</td>
+              <td>
+                <button
+                  className="btn-ghost-sm"
+                  onClick={() => handleCheckout(v.visit_id, v.visitor_name)}
+                  disabled={checking === v.visit_id}
+                >
+                  {checking === v.visit_id ? '…' : 'Check Out'}
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
           </div>
         )}
       </div>

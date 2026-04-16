@@ -60,9 +60,7 @@ router.post('/visitors/check-cpr', auth, async (req, res) => {
 });
 
 // ══ VISITS ═════════════════════════════════════════════════════
-
 // GET all visits (with visitor + card info)
-
 router.get('/visits', auth, async (req, res) => {
   const { status, visit_id } = req.query;
   try {
@@ -79,21 +77,46 @@ router.get('/visits', auth, async (req, res) => {
 
     const { rows } = await pool.query(`
       SELECT
-        v.visit_id, v.status, v.check_in_time, v.check_out_time,
-        v.host_employee, v.purpose, v.notes, v.floor,
-        vi.full_name AS visitor_name, vi.cpr_number, vi.company,
+        v.visit_id, 
+        v.status, 
+        v.check_in_time, 
+        v.check_out_time,
+        v.host_employee, 
+        v.purpose, 
+        v.notes, 
+        v.floor,
+        v.issued_by,
+        vi.full_name AS visitor_name, 
+        vi.cpr_number, 
+        vi.company,
         ac.card_uid,
         d.name AS department_name,
+        u.full_name AS checked_in_by_name,
         EXTRACT(EPOCH FROM (COALESCE(v.check_out_time, now()) - v.check_in_time))/60 AS duration_minutes
       FROM visits v
       JOIN visitors vi ON vi.visitor_id = v.visitor_id
       LEFT JOIN access_cards ac ON ac.card_id = v.card_id
       LEFT JOIN departments d ON d.department_id = v.department_id
+      LEFT JOIN users u ON u.user_id = v.issued_by
       ${whereClause}
       ORDER BY v.check_in_time DESC LIMIT 200
     `, params);
+    
+    // 1. THIS PRINTS TO YOUR BACKEND TERMINAL
+    console.log("--- DEBUG DASHBOARD DATA ---");
+    if (rows.length > 0) {
+      console.log("First Row:", rows[0]);
+    } else {
+      console.log("No rows found for query:", whereClause, params);
+    }
+
+    // 2. THIS SENDS THE DATA TO THE BROWSER (CRITICAL!)
     res.json(rows);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+
+  } catch (err) { 
+    console.error("Dashboard Fetch Error:", err.message);
+    res.status(500).json({ error: err.message }); 
+  }
 });
 
 // GET visits by visitor ID
@@ -105,10 +128,12 @@ router.get('/visits/by-visitor/:visitor_id', auth, async (req, res) => {
         v.host_employee, v.purpose, v.notes, v.floor,
         ac.card_uid,
         d.name AS department_name,
+        u.full_name AS checked_in_by_name,
         EXTRACT(EPOCH FROM (COALESCE(v.check_out_time, now()) - v.check_in_time))/60 AS duration_minutes
       FROM visits v
       LEFT JOIN access_cards ac ON ac.card_id = v.card_id
       LEFT JOIN departments d ON d.department_id = v.department_id
+      LEFT JOIN users u ON u.user_id = v.issued_by
       WHERE v.visitor_id = $1
       ORDER BY v.check_in_time DESC
     `, [req.params.visitor_id]);
@@ -393,9 +418,16 @@ router.post('/users', auth, async (req, res) => {
     return res.status(400).json({ error: 'Invalid role.' });
   }
 
-  if (password.length < 8) {
-    return res.status(400).json({ error: 'Password must be at least 8 characters.' });
-  }
+const pwChecks = {
+  length:  password.length >= 10,
+  upper:   /[A-Z]/.test(password),
+  lower:   /[a-z]/.test(password),
+  number:  /[0-9]/.test(password),
+  symbol:  /[^A-Za-z0-9]/.test(password),
+};
+if (!Object.values(pwChecks).every(Boolean)) {
+  return res.status(400).json({ error: 'Password must be at least 10 characters and include an uppercase letter, lowercase letter, number, and symbol.' });
+}
 
   try {
     const bcrypt = require('bcrypt');
@@ -566,16 +598,136 @@ router.delete('/cards/:id', auth, async (req, res) => {
 
 // POST card issue report (sent to audit log for admin review)
 router.post('/visits/card-report', auth, async (req, res) => {
-  const { card_uid, visitor_name, cpr_number, note } = req.body;
+  const { card_uid, visitor_name, note } = req.body;
+  const client = await pool.connect();
+
   try {
-    await pool.query(
+    await client.query('BEGIN');
+
+    // 1. Get the name of the logged-in user (the one reporting)
+    const userRes = await client.query(
+      'SELECT full_name FROM users WHERE user_id = $1', 
+      [req.user.userId]
+    );
+    const reporterName = userRes.rows[0]?.full_name || 'System';
+
+    // 2. Format the note to show who reported it and which visitor had it
+    const formattedNote = `Reported by ${reporterName}: ${note}`;
+
+    // 3. Update the access_cards table
+    await client.query(
+      `UPDATE access_cards 
+       SET status = 'lost', last_note = $1 
+       WHERE card_uid = $2`,
+      [formattedNote, card_uid]
+    );
+
+    // 4. Log to audit_log for a permanent history
+    await client.query(
       `INSERT INTO audit_log (user_id, action, target_table, new_values)
        VALUES ($1, 'CARD_ISSUE_REPORT', 'access_cards', $2)`,
-      [req.user.userId, JSON.stringify({ card_uid, visitor_name, cpr_number, note, reported_at: new Date() })]
+      [
+        req.user.userId,
+        JSON.stringify({ 
+          card_uid, 
+          visitor_name, 
+          note, 
+          reported_by: reporterName, 
+          timestamp: new Date() 
+        })
+      ]
     );
+
+    await client.query('COMMIT');
     res.json({ success: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
 });
 
-module.exports = router;
 
+// ══ CARD SKIP (Card wasn't assigned — skip to next) ═══════════
+
+// POST skip card — marks current card as problematic, returns next available
+// POST skip card — FAST SKIP (No reason required)
+router.post('/cards/skip', auth, async (req, res) => {
+  const { card_id } = req.body; 
+  if (!card_id) return res.status(400).json({ error: 'card_id is required.' });
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Get reporter name
+    const uRes = await client.query('SELECT full_name FROM users WHERE user_id=$1', [req.user.userId]);
+    const reporter = uRes.rows[0]?.full_name || 'Unknown';
+
+    // Mark as 'retired' by default for quick skipping
+    const note = `Quick-skipped during check-in by ${reporter}. ${new Date().toLocaleString('en-GB')}`;
+    
+    await client.query(
+      `UPDATE access_cards 
+       SET status='retired', last_note=$1, skip_count=COALESCE(skip_count,0)+1, visitor_id=NULL 
+       WHERE card_id=$2`,
+      [note, card_id]
+    );
+
+    // Audit log
+    await client.query(
+      `INSERT INTO audit_log (user_id, action, target_table, target_id, new_values)
+       VALUES ($1,'CARD_SKIP_FAST','access_cards',$2,$3)`,
+      [req.user.userId, String(card_id), JSON.stringify({ card_id, action: 'fast_skip' })]
+    );
+
+    // Get the next available card immediately
+    const nextRes = await client.query(
+      `SELECT * FROM access_cards 
+       WHERE status='available' AND card_id != $1 
+       ORDER BY COALESCE(total_uses,0) ASC LIMIT 1`,
+      [card_id]
+    );
+
+    await client.query('COMMIT');
+    res.json({ success: true, next_card: nextRes.rows[0] || null });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// POST card issue report (legacy — kept for compatibility)
+// router.post('/visits/card-report', auth, async (req, res) => {
+//   const { card_uid, visitor_name, note } = req.body;
+//   const client = await pool.connect();
+//   try {
+//     await client.query('BEGIN');
+//     const uRes = await client.query('SELECT full_name FROM users WHERE user_id=$1', [req.user.userId]);
+//     const reporter = uRes.rows[0]?.full_name || 'System';
+//     const formattedNote = `Reported by ${reporter}: ${note}`;
+//     if (card_uid) {
+//       await client.query(
+//         `UPDATE access_cards SET status='lost', last_note=$1 WHERE card_uid=$2`,
+//         [formattedNote, card_uid]
+//       );
+//     }
+//     await client.query(
+//       `INSERT INTO audit_log (user_id, action, target_table, new_values)
+//        VALUES ($1,'CARD_ISSUE_REPORT','access_cards',$2)`,
+//       [req.user.userId, JSON.stringify({ card_uid, visitor_name, note, reported_by: reporter, timestamp: new Date() })]
+//     );
+//     await client.query('COMMIT');
+//     res.json({ success: true });
+//   } catch (err) {
+//     await client.query('ROLLBACK');
+//     res.status(500).json({ error: err.message });
+//   } finally {
+//     client.release();
+//   }
+// });
+
+module.exports = router;
