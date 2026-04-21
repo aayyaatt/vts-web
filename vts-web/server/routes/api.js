@@ -3,7 +3,7 @@ const router  = express.Router();
 const pool    = require('../db/pool');
 const auth    = require('../middleware/auth');
 
-// ══ VISITORS ═══════════════════════════════════════════════════
+// -- VISITORS ---------------------------------------------------
 
 // GET all visitors
 router.get('/visitors', auth, async (req, res) => {
@@ -59,7 +59,7 @@ router.post('/visitors/check-cpr', auth, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ══ VISITS ═════════════════════════════════════════════════════
+// -- VISITS ----------------------------------------------
 // GET all visits (with visitor + card info)
 router.get('/visits', auth, async (req, res) => {
   const { status, visit_id } = req.query;
@@ -150,7 +150,7 @@ router.post('/visits', auth, async (req, res) => {
   try {
     await client.query('BEGIN');
 
-    // ── Check for existing active visit ──────────────────────
+    // -- Check for existing active visit ----------------------------------------
     const activeCheck = await client.query(
       `SELECT visit_id, card_id FROM visits
        WHERE visitor_id = $1 AND status IN ('active', 'overstay')
@@ -166,7 +166,7 @@ router.post('/visits', auth, async (req, res) => {
       });
     }
 
-    // ── Get floor from department ─────────────────────────────
+    //  Get floor from department -------------------------------------------------------------
     let floor = null;
     if (department_id) {
       const dRes = await client.query(
@@ -176,7 +176,7 @@ router.post('/visits', auth, async (req, res) => {
       floor = dRes.rows[0]?.floor || null;
     }
 
-    // ── Insert visit ──────────────────────────────────────────
+    // Insert visit 
     const { rows } = await client.query(
       `INSERT INTO visits (visitor_id, card_id, host_employee, purpose, notes, issued_by, department_id, floor)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
@@ -285,7 +285,7 @@ router.get('/visits/by-visitor/:visitor_id', auth, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ══ CARDS ══════════════════════════════════════════════════════
+//  CARDS ------------------------------------------------------------------------
 
 // GET all cards
 router.get('/cards', auth, async (req, res) => {
@@ -311,7 +311,7 @@ router.get('/cards/next-available', auth, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ══ DOORS ══════════════════════════════════════════════════════
+// DOORS 
 
 router.get('/doors', auth, async (req, res) => {
   try {
@@ -320,7 +320,7 @@ router.get('/doors', auth, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ══ USERS (admin only) ═════════════════════════════════════════
+//  USERS (admin only)
 
 router.get('/users', auth, async (req, res) => {
   if (req.user.role !== 'admin' && req.user.role !== 'manager') {
@@ -335,7 +335,7 @@ router.get('/users', auth, async (req, res) => {
 });
 
 
-// ══ GOOGLE FORMS SUBMISSION ════════════════════════════════════
+//-- GOOGLE FORMS SUBMISSION -------------------------------------------
 router.post('/visits-from-form', async (req, res) => {
   const apiKey = req.headers['x-api-key'];
   if (apiKey !== process.env.FORM_API_KEY) {
@@ -399,8 +399,7 @@ router.post('/visits-from-form', async (req, res) => {
   }
 });
 
-// ══ USER MANAGEMENT (admin only) ══════════════════════════════
-
+// -- USER MANAGEMENT (admin only) ------------------------------------------------------
 // POST create new user
 router.post('/users', auth, async (req, res) => {
   if (req.user.role !== 'admin') {
@@ -474,7 +473,7 @@ router.patch('/users/:id/toggle', auth, async (req, res) => {
   }
 });
 
-// ══ DEPARTMENTS ════════════════════════════════════════════════
+// -- DEPARTMENTS ---------------------------------------------------
 
 // GET all departments
 router.get('/departments', auth, async (req, res) => {
@@ -532,7 +531,7 @@ router.delete('/departments/:id', auth, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ══ CARD MANAGEMENT ════════════════════════════════════════════
+// -- CARD MANAGEMENT ---------------------------------------------------------
 
 // POST add new card (admin only)
 router.post('/cards', auth, async (req, res) => {
@@ -556,21 +555,20 @@ router.post('/cards', auth, async (req, res) => {
 
 // PATCH update card status (admin only)
 router.patch('/cards/:id', auth, async (req, res) => {
-  if (req.user.role !== 'admin' && req.user.role !== 'manager') {
+  if (req.user.role !== 'admin' && req.user.role !== 'manager')
     return res.status(403).json({ error: 'Admin or manager only.' });
-  }
-  const { status, card_uid } = req.body;
+  const { status, card_uid, last_note } = req.body;
   const validStatuses = ['available', 'assigned', 'lost', 'retired'];
-  if (status && !validStatuses.includes(status)) {
+  if (status && !validStatuses.includes(status))
     return res.status(400).json({ error: 'Invalid status.' });
-  }
   try {
     const { rows } = await pool.query(
-      `UPDATE access_cards
-       SET status   = COALESCE($1, status),
-           card_uid = COALESCE($2, card_uid)
-       WHERE card_id = $3 RETURNING *`,
-      [status || null, card_uid || null, req.params.id]
+      `UPDATE access_cards SET
+         status   = COALESCE($1, status),
+         card_uid = COALESCE($2, card_uid),
+         last_note = CASE WHEN $3::text IS NOT NULL THEN $3 ELSE last_note END
+       WHERE card_id = $4 RETURNING *`,
+      [status || null, card_uid || null, last_note !== undefined ? last_note : null, req.params.id]
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Card not found.' });
     res.json(rows[0]);
@@ -649,7 +647,7 @@ router.post('/visits/card-report', auth, async (req, res) => {
 });
 
 
-// ══ CARD SKIP (Card wasn't assigned — skip to next) ═══════════
+// -- CARD SKIP (Card wasn't assigned — skip to next) ------------------------------------------------------
 
 // POST skip card — marks current card as problematic, returns next available
 // POST skip card — FAST SKIP (No reason required)

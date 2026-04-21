@@ -1,6 +1,15 @@
 import { useState, useEffect } from 'react';
 import api from '../api';
 
+function formatDuration(mins) {
+  if (!mins && mins !== 0) return '—';
+  const m = Math.round(mins);
+  if (m < 60) return `${m}m`;
+  const hours = Math.floor(m / 60);
+  const remainingMins = m % 60;
+  return remainingMins > 0 ? `${hours}h ${remainingMins}m` : `${hours}h`;
+}
+
 export default function Visitors() {
   const [visitors,  setVisitors]  = useState([]);
   const [search,    setSearch]    = useState('');
@@ -149,11 +158,11 @@ export default function Visitors() {
             ) : visits.length === 0 ? (
               <div style={{ padding: '30px 0', textAlign: 'center', color: 'var(--dim)', fontSize: 13 }}>No visits recorded yet.</div>
             ) : (
-             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+<table style={{ width: '100%', borderCollapse: 'collapse' }}>
   <thead>
     <tr>
-      {/* Added 'Staff' to the header array */}
-      {['Date', 'Department', 'Floor', 'Host', 'Card', 'Staff', 'Duration', 'Status'].map(h => (
+      {/* Added 'Purpose' to the header array */}
+      {['Date', 'Purpose', 'Department', 'Floor', 'Host', 'Card', 'Staff', 'Duration', 'Status'].map(h => (
         <th key={h} style={{ fontFamily: 'var(--mono)', fontSize: 11, letterSpacing: '.08em', color: 'var(--dim)', textAlign: 'left', padding: '9px 16px', borderBottom: '1px solid var(--border)', background: 'rgba(255,255,255,.02)', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
           {h}
         </th>
@@ -171,21 +180,27 @@ export default function Visitors() {
             {new Date(v.check_in_time).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
           </div>
         </td>
+
+        {/* New Purpose Cell */}
+        <td style={{ padding: '11px 16px', fontSize: 13, borderBottom: '1px solid var(--border)', maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={v.purpose}>
+          {v.purpose || '—'}
+        </td>
+
         <td style={{ padding: '11px 16px', fontSize: 13, borderBottom: '1px solid var(--border)' }}>{v.department_name || '—'}</td>
         <td style={{ padding: '11px 16px', fontSize: 12, fontFamily: 'var(--mono)', color: 'var(--blue)', borderBottom: '1px solid var(--border)', fontWeight: 600 }}>{v.floor || '—'}</td>
         <td style={{ padding: '11px 16px', fontSize: 13, color: 'var(--dim)', borderBottom: '1px solid var(--border)' }}>{v.host_employee || '—'}</td>
         <td style={{ padding: '11px 16px', borderBottom: '1px solid var(--border)' }}>
           <span className="badge badge-blue">{v.card_uid || '—'}</span>
         </td>
-
-        {/* New Data Cell for Checked-in Staff Name */}
         <td style={{ padding: '11px 16px', fontSize: 12, borderBottom: '1px solid var(--border)', color: 'var(--text)' }}>
           {v.checked_in_by_name || '—'}
         </td>
 
-        <td style={{ padding: '11px 16px', fontSize: 12, fontFamily: 'var(--mono)', color: 'var(--dim)', borderBottom: '1px solid var(--border)' }}>
-          {v.duration_minutes ? `${Math.round(v.duration_minutes)}m` : '—'}
+        {/* Updated Duration Cell using the helper */}
+        <td style={{ padding: '11px 16px', fontSize: 12, fontFamily: 'var(--mono)', color: 'var(--dim)', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' }}>
+          {formatDuration(v.duration_minutes)}
         </td>
+
         <td style={{ padding: '11px 16px', borderBottom: '1px solid var(--border)' }}>
           {statusBadge(v.status)}
         </td>

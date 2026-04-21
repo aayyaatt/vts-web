@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useOverstay } from '../context/OverstayContext';
@@ -7,6 +8,16 @@ export default function Layout() {
   const { user, logout } = useAuth();
   const { overstays, count } = useOverstay();
   const navigate = useNavigate();
+  const [bannerDismissed, setBannerDismissed] = useState(false);
+
+  // Re-show banner if new overstays appear after dismissal
+  const [lastCount, setLastCount] = useState(count);
+  if (count > lastCount) {
+    setBannerDismissed(false);
+    setLastCount(count);
+  } else if (count !== lastCount) {
+    setLastCount(count);
+  }
 
   const NAV_ITEMS = [
     { to: '/dashboard', icon: '⬛', label: 'Dashboard'  },
@@ -48,17 +59,12 @@ export default function Layout() {
             >
               <span>{item.icon}</span>
               {item.label}
-              {/* Overstay badge on Dashboard tab */}
               {item.to === '/dashboard' && count > 0 && (
                 <span style={{
-                  background: 'var(--red)',
-                  color: '#fff',
-                  borderRadius: '100px',
-                  fontSize: 10,
-                  fontFamily: 'var(--mono)',
-                  fontWeight: 700,
-                  padding: '1px 6px',
-                  marginLeft: 2,
+                  background: 'var(--red)', color: '#fff',
+                  borderRadius: 100, fontSize: 10,
+                  fontFamily: 'var(--mono)', fontWeight: 700,
+                  padding: '1px 6px', marginLeft: 2,
                   boxShadow: '0 0 6px var(--red)',
                   animation: 'pulse 2s infinite',
                 }}>
@@ -83,7 +89,7 @@ export default function Layout() {
       </nav>
 
       {/* Overstay Banner */}
-      {count > 0 && (
+      {/* {count > 0 && !bannerDismissed && (
         <div style={{
           background: 'rgba(248,81,73,.12)',
           borderBottom: '1px solid rgba(248,81,73,.3)',
@@ -102,11 +108,24 @@ export default function Layout() {
               {overstays.map(v => v.visitor_name).join(', ')} {count === 1 ? 'has' : 'have'} exceeded the maximum visit duration.
             </span>
           </div>
-          <NavLink to="/dashboard" style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--red)', textDecoration: 'none', border: '1px solid rgba(248,81,73,.3)', borderRadius: 6, padding: '4px 12px' }}>
-            View →
-          </NavLink>
+          <button
+            onClick={() => setBannerDismissed(true)}
+            title="Dismiss"
+            style={{
+              background: 'none', border: 'none',
+              color: 'var(--red)', cursor: 'pointer',
+              fontSize: 18, lineHeight: 1,
+              padding: '2px 6px', borderRadius: 4,
+              opacity: .7, transition: 'opacity .15s',
+              fontFamily: 'var(--sans)',
+            }}
+            onMouseEnter={e => e.currentTarget.style.opacity = '1'}
+            onMouseLeave={e => e.currentTarget.style.opacity = '.7'}
+          >
+            ✕
+          </button>
         </div>
-      )}
+      )} */}
 
       {/* Page content */}
       <main className={styles.main}>

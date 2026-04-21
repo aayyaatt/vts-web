@@ -49,9 +49,10 @@ export default function Login() {
         <div className={styles.topBar}>
           <div className={`${styles.dbDot} ${styles[dbStatus]}`}>●</div>
           <span className={styles.dbLabel}>
+            {/* //Database status
             {dbStatus === 'checking' && 'Connecting to database…'}
             {dbStatus === 'ok'       && 'Database connected'}
-            {dbStatus === 'error'    && 'Database unreachable'}
+            {dbStatus === 'error'    && 'Database unreachable'} */}
           </span>
         </div>
 
@@ -122,7 +123,7 @@ export default function Login() {
           </button>
         </form>
 
-        <p className={styles.footer}>VTS v1.0  ·  Internal Use Only</p>
+        <p className={styles.footer}>VTS v5.0  ·  Internal Use Only</p>
       </div>
     </div>
   );
