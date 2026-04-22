@@ -229,7 +229,7 @@ export default function Dashboard() {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
-                  {['Visitor', 'Card', 'Department', 'Floor', 'Host', 'Staff', 'Check-In', 'Valid Until', 'Duration', 'Status', ''].map(h => (
+                  {['Visitor', 'Card', 'Department', 'Floor', 'Host', 'Staff', 'Check-In', 'Duration', 'Status', ''].map(h => (
                     <th key={h} style={{ fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '.08em', color: 'var(--dim)', textAlign: 'left', padding: '9px 14px', borderBottom: '1px solid var(--border)', background: 'rgba(255,255,255,.02)', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
                       {h}
                     </th>
@@ -290,12 +290,12 @@ export default function Dashboard() {
                         {new Date(v.check_in_time).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
                       </td>
 
-                      {/* Valid Until */}
+                      {/* Valid Until
                       <td style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)', fontFamily: 'var(--mono)', fontSize: 12, color: isOverstay ? 'var(--red)' : isWarning ? 'var(--amber)' : 'var(--dim)', whiteSpace: 'nowrap' }}>
                         {v.valid_until
                           ? new Date(v.valid_until).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
                           : '—'}
-                      </td>
+                      </td> */}
 
                       {/* Duration */}
                       <td style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)', fontFamily: 'var(--mono)', fontSize: 12, color: isOverstay ? 'var(--red)' : isWarning ? 'var(--amber)' : 'var(--dim)', whiteSpace: 'nowrap' }}>
