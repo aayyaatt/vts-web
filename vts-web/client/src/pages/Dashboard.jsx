@@ -53,12 +53,13 @@ function StatusBadge({ status }) {
 }
 
 export default function Dashboard() {
-  const navigate  = useNavigate();
-  const [stats,   setStats]   = useState(null);
-  const [visits,  setVisits]  = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [checking,setChecking]= useState(null);
-  const [filter,  setFilter]  = useState('all');
+  const navigate   = useNavigate();
+  const [stats,    setStats]    = useState(null);
+  const [visits,   setVisits]   = useState([]);
+  const [loading,  setLoading]  = useState(true);
+  const [checking, setChecking] = useState(null);
+  const [filter,   setFilter]   = useState('all');
+  const [cprSearch,setCprSearch]= useState('');   // ← new
 
   const fetchAll = useCallback(async () => {
     try {
@@ -93,46 +94,46 @@ export default function Dashboard() {
     hour: '2-digit', minute: '2-digit',
   });
 
-  const warningVisits  = visits.filter(v => {
+  const warningVisits = visits.filter(v => {
     const liveStatus = getLiveStatus(v);
     if (liveStatus === 'overstay') return false;
     const { warn } = getThresholds(v.purpose);
     return (v.duration_minutes || 0) >= warn;
   });
 
-  const overstayVisits = visits.filter(v => getLiveStatus(v) === 'overstay');
+  const overstayVisits    = visits.filter(v => getLiveStatus(v) === 'overstay');
   const liveOverstayCount = overstayVisits.length;
 
+  // Filter by tab AND CPR search
   const filteredVisits = visits.filter(v => {
     const live = getLiveStatus(v);
-    if (filter === 'all')       return true;
-    if (filter === 'active')    return live === 'active';
-    if (filter === 'overstay')  return live === 'overstay';
-    if (filter === 'delivery')  return v.purpose?.toLowerCase().includes('delivery');
+    if (filter === 'active'   && live !== 'active')   return false;
+    if (filter === 'overstay' && live !== 'overstay') return false;
+    if (cprSearch.trim()) {
+      const q = cprSearch.trim().toLowerCase();
+      return (v.cpr_number || '').includes(q) || (v.visitor_name || '').toLowerCase().includes(q);
+    }
     return true;
   });
 
   return (
     <div style={{ padding: 24 }} className="fade-in">
 
-    
+      {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 24 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-
-            <h1 style={{ fontSize: 20, fontWeight: 700 }}>Security Dashboard</h1>
-            <p style={{ fontSize: 12, color: 'var(--dim)', marginTop: 2 }}>{now}</p>
-                      <button
+          <h1 style={{ fontSize: 20, fontWeight: 700 }}>Security Dashboard</h1>
+          <p style={{ fontSize: 12, color: 'var(--dim)', marginTop: 2 }}>{now}</p>
+          <button
             onClick={() => navigate('/checkin')}
             style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px', borderRadius: 8, background: 'var(--blue)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--sans)', flexShrink: 0 }}
           >
             ✚ New Check-In
           </button>
-          <div>
-          </div>
         </div>
       </div>
 
-      {/* ── Warning banners ── */}
+      {/* Warning banners */}
       {warningVisits.length > 0 && (
         <div style={{ background: 'rgba(240,160,52,.08)', border: '1px solid rgba(240,160,52,.4)', borderRadius: 8, padding: '12px 16px', marginBottom: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
           {warningVisits.map(v => {
@@ -175,27 +176,25 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* ── KPIs ── */}
+      {/* KPIs */}
       <div style={{ display: 'flex', gap: 14, marginBottom: 24, flexWrap: 'wrap' }}>
-        <KPI label="Visitors Inside"  value={stats?.visitors_inside} color="blue"  sub="currently active" />
-        <KPI label="Cards Available"  value={stats?.cards_available} color="green" sub="ready to assign" />
-        <KPI label="Overstay Alerts"  value={liveOverstayCount}      color="amber" sub="exceeding time limit" />
-        <KPI label="Check-Ins Today"  value={stats?.checkins_today}  color="blue"  sub="total today" />
+        <KPI label="Visitors Inside" value={stats?.visitors_inside} color="blue"  sub="currently active" />
+        <KPI label="Cards Available" value={stats?.cards_available} color="green" sub="ready to assign" />
+        <KPI label="Overstay Alerts" value={liveOverstayCount}      color="amber" sub="exceeding time limit" />
+        <KPI label="Check-Ins Today" value={stats?.checkins_today}  color="blue"  sub="total today" />
       </div>
 
-      {/* ── Active Visits Table ── */}
+      {/* Active Visits Table */}
       <div style={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
 
-        {/* Panel header with filters */}
+        {/* Panel header */}
         <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
           <span style={{ fontSize: 14, fontWeight: 600 }}>🟢 Active Visitors</span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {[
-              ['all',      'All'],
-              ['active',   'Active'],
-              ['overstay', '⚠ Overstay'],
-              // ['delivery', '📦 Delivery'],
-            ].map(([val, label]) => (
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+
+            {/* Filter tabs */}
+            {[['all','All'],['active','Active'],['overstay','⚠ Overstay']].map(([val, label]) => (
               <button key={val} onClick={() => setFilter(val)}
                 style={{
                   padding: '4px 12px', borderRadius: 100, fontSize: 11,
@@ -213,7 +212,31 @@ export default function Dashboard() {
                 )}
               </button>
             ))}
-            <span style={{ fontSize: 11, color: 'var(--faint)', fontFamily: 'var(--mono)', marginLeft: 4 }}>↻ 15s</span>
+
+            {/* CPR / name search */}
+            <div style={{ position: 'relative' }}>
+              <span style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', fontSize: 11, color: 'var(--dim)', pointerEvents: 'none' }}>🔍</span>
+              <input
+                type="text"
+                placeholder="Search CPR or name…"
+                value={cprSearch}
+                onChange={e => setCprSearch(e.target.value)}
+                style={{
+                  background: 'var(--panel2)', border: '1px solid var(--border2)',
+                  borderRadius: 7, padding: '5px 10px 5px 26px',
+                  fontSize: 12, color: 'var(--text)', fontFamily: 'var(--sans)',
+                  outline: 'none', width: 170,
+                }}
+              />
+              {cprSearch && (
+                <button onClick={() => setCprSearch('')}
+                  style={{ position: 'absolute', right: 7, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--dim)', cursor: 'pointer', fontSize: 12, lineHeight: 1, padding: 0 }}>
+                  ✕
+                </button>
+              )}
+            </div>
+
+            <span style={{ fontSize: 11, color: 'var(--faint)', fontFamily: 'var(--mono)' }}>↻ 15s</span>
           </div>
         </div>
 
@@ -222,7 +245,7 @@ export default function Dashboard() {
           <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--dim)', fontSize: 13 }}>Loading…</div>
         ) : filteredVisits.length === 0 ? (
           <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--dim)', fontSize: 13 }}>
-            {filter === 'all' ? 'No active visitors at the moment.' : `No ${filter} visitors.`}
+            {cprSearch ? `No active visitors matching "${cprSearch}".` : filter === 'all' ? 'No active visitors at the moment.' : `No ${filter} visitors.`}
           </div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
@@ -239,12 +262,16 @@ export default function Dashboard() {
               <tbody>
                 {filteredVisits.map(v => {
                   const liveStatus = getLiveStatus(v);
-                  const isDelivery = v.purpose?.toLowerCase().includes('delivery');
-                  const mins = Math.round(v.duration_minutes || 0);
-                  const { warn } = getThresholds(v.purpose);
+                  const mins       = Math.round(v.duration_minutes || 0);
+                  const { warn }   = getThresholds(v.purpose);
                   const isWarning  = mins >= warn && liveStatus !== 'overstay';
                   const isOverstay = liveStatus === 'overstay';
-                  const rowBg = isOverstay ? 'rgba(248,81,73,.04)' : isWarning ? 'rgba(240,160,52,.03)' : 'transparent';
+                  const rowBg      = isOverstay ? 'rgba(248,81,73,.04)' : isWarning ? 'rgba(240,160,52,.03)' : 'transparent';
+
+                  // Highlight matched CPR digits
+                  const cprDisplay = cprSearch.trim()
+                    ? <span style={{ color: 'var(--blue)', fontWeight: 700 }}>{v.cpr_number}</span>
+                    : v.cpr_number;
 
                   return (
                     <tr key={v.visit_id}
@@ -252,7 +279,6 @@ export default function Dashboard() {
                       onMouseEnter={e => e.currentTarget.style.background = isOverstay ? 'rgba(248,81,73,.07)' : 'rgba(56,139,253,.04)'}
                       onMouseLeave={e => e.currentTarget.style.background = rowBg}
                     >
-                      {/* Visitor */}
                       <td style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                           <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'linear-gradient(135deg,#1a3a6e,var(--blue))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: '#fff', flexShrink: 0 }}>
@@ -260,54 +286,34 @@ export default function Dashboard() {
                           </div>
                           <div>
                             <div style={{ fontSize: 13, fontWeight: 600 }}>{v.visitor_name}</div>
-                            <div style={{ fontSize: 11, color: 'var(--dim)', fontFamily: 'var(--mono)' }}>{v.cpr_number}</div>
+                            <div style={{ fontSize: 11, color: 'var(--dim)', fontFamily: 'var(--mono)' }}>{cprDisplay}</div>
                           </div>
-                          {/* {isDelivery && <span title="Delivery" style={{ fontSize: 14 }}>📦</span>} */}
                         </div>
                       </td>
 
-                      {/* Card */}
                       <td style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)' }}>
                         <span style={{ background: 'rgba(56,139,253,.1)', color: 'var(--blue)', borderRadius: 5, padding: '3px 8px', fontSize: 12, fontFamily: 'var(--mono)', fontWeight: 600 }}>
                           {v.card_uid || '—'}
                         </span>
                       </td>
 
-                      {/* Department */}
                       <td style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)', fontSize: 13, color: 'var(--text)' }}>{v.department_name || '—'}</td>
-
-                      {/* Floor */}
                       <td style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)', fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--blue)', fontWeight: 600 }}>{v.floor || '—'}</td>
-
-                      {/* Host */}
                       <td style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)', fontSize: 13, color: 'var(--dim)' }}>{v.host_employee || '—'}</td>
-
-                      {/* Staff */}
                       <td style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)', fontSize: 12, color: 'var(--dim)' }}>{v.checked_in_by_name || '—'}</td>
 
-                      {/* Check-in time */}
                       <td style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)', fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--dim)', whiteSpace: 'nowrap' }}>
                         {new Date(v.check_in_time).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
                       </td>
 
-                      {/* Valid Until
-                      <td style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)', fontFamily: 'var(--mono)', fontSize: 12, color: isOverstay ? 'var(--red)' : isWarning ? 'var(--amber)' : 'var(--dim)', whiteSpace: 'nowrap' }}>
-                        {v.valid_until
-                          ? new Date(v.valid_until).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
-                          : '—'}
-                      </td> */}
-
-                      {/* Duration */}
                       <td style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)', fontFamily: 'var(--mono)', fontSize: 12, color: isOverstay ? 'var(--red)' : isWarning ? 'var(--amber)' : 'var(--dim)', whiteSpace: 'nowrap' }}>
                         {duration(v.duration_minutes)}
                       </td>
 
-                      {/* Status */}
                       <td style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)' }}>
                         <StatusBadge status={liveStatus} />
                       </td>
 
-                      {/* Checkout button */}
                       <td style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)' }}>
                         <button
                           onClick={() => handleCheckout(v.visit_id, v.visitor_name)}
