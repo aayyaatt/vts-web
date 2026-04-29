@@ -50,7 +50,7 @@ const pathLib  = require('path');
 const fsLib    = require('fs');
 
 // Auto-launch eRevealer.Gcc silently when server starts
-const erevealer = pathLib.join(__dirname, '..', 'card-reader', 'eRevealer.Gcc.exe');
+const erevealer = pathLib.join(__dirname, '..', 'card-reader','wine', 'eRevealer.Gcc.exe');
 if (fsLib.existsSync(erevealer)) {
   const rdr = spawn(erevealer, [], {
     detached:    true,
