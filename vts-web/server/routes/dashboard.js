@@ -98,7 +98,6 @@ router.get('/activity', auth, async (req, res) => {
         AND al.action IN ('CHECKIN','CHECKOUT')
       LEFT JOIN visitors vi ON vi.visitor_id = v.visitor_id
       ORDER BY al.performed_at DESC
-      LIMIT 100
     `);
     res.json(rows);
   } catch (err) {

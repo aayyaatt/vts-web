@@ -5,17 +5,21 @@ import api from '../api';
 const STATUSES = ['available', 'assigned', 'lost', 'retired'];
 
 export default function Cards() {
-  const { user }   = useAuth();
-  const isAdmin    = user?.role === 'admin' || user?.role === 'manager';
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin' || user?.role === 'manager';
 
-  const [cards,        setCards]        = useState([]);
-  const [showForm,     setShowForm]     = useState(false);
-  const [editing,      setEditing]      = useState(null);
-  const [showDamaged,  setShowDamaged]  = useState(false);
-  const [search,       setSearch]       = useState('');
-  const [error,        setError]        = useState('');
-  const [success,      setSuccess]      = useState('');
+  const [cards, setCards] = useState([]);
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [showDamaged, setShowDamaged] = useState(false);
+  const [search, setSearch] = useState('');
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [selectedCard, setSelectedCard] = useState(null);
+
+  // --- NEW STATE FOR NOTES ---
+  const [noteEditing, setNoteEditing] = useState(null);
+  const [noteText, setNoteText] = useState('');
 
   useEffect(() => { fetchCards(); }, []);
 
@@ -28,7 +32,22 @@ export default function Cards() {
 
   function flash(msg, type = 'success') {
     if (type === 'success') { setSuccess(msg); setTimeout(() => setSuccess(''), 3000); }
-    else                    { setError(msg);   setTimeout(() => setError(''), 4000);   }
+    else { setError(msg); setTimeout(() => setError(''), 4000); }
+  }
+
+  // --- NEW NOTE FUNCTIONS ---
+  function openNoteEditor(card) {
+    setNoteEditing(card);
+    setNoteText(card.last_note || '');
+  }
+
+  async function saveNoteOnly() {
+    try {
+      await api.patch(`/cards/${noteEditing.card_id}`, { last_note: noteText });
+      flash('Note updated.');
+      setNoteEditing(null);
+      fetchCards();
+    } catch (err) { flash('Failed to update note.', 'error'); }
   }
 
   async function handleDelete(card) {
@@ -41,7 +60,6 @@ export default function Cards() {
     } catch (err) { flash(err.response?.data?.error || 'Delete failed.', 'error'); }
   }
 
-  // Clear note directly from the info panel (no need to open edit form)
   async function handleClearNote(card) {
     if (!window.confirm('Clear the note for this card?')) return;
     try {
@@ -56,13 +74,13 @@ export default function Cards() {
   const filterFn = c => !q || c.card_uid.toLowerCase().includes(q) || (c.visitor_name || '').toLowerCase().includes(q);
 
   const available = cards.filter(c => c.status === 'available' && filterFn(c));
-  const assigned  = cards.filter(c => c.status === 'assigned'  && filterFn(c));
-  const damaged   = cards.filter(c => (c.status === 'lost' || c.status === 'retired') && filterFn(c));
+  const assigned = cards.filter(c => c.status === 'assigned' && filterFn(c));
+  const damaged = cards.filter(c => (c.status === 'lost' || c.status === 'retired') && filterFn(c));
 
   const counts = {
     available: cards.filter(c => c.status === 'available').length,
-    assigned:  cards.filter(c => c.status === 'assigned').length,
-    damaged:   cards.filter(c => c.status === 'lost' || c.status === 'retired').length,
+    assigned: cards.filter(c => c.status === 'assigned').length,
+    damaged: cards.filter(c => c.status === 'lost' || c.status === 'retired').length,
   };
 
   return (
@@ -94,10 +112,10 @@ export default function Cards() {
       </div>
 
       {/* Alerts */}
-      {error   && <div style={{ background:'rgba(248,81,73,.1)', border:'1px solid rgba(248,81,73,.3)', borderRadius:6, padding:'10px 14px', fontSize:13, color:'var(--red)',   marginBottom:16 }}>✕ {error}</div>}
-      {success && <div style={{ background:'rgba(63,185,80,.1)',  border:'1px solid rgba(63,185,80,.3)',  borderRadius:6, padding:'10px 14px', fontSize:13, color:'var(--green)', marginBottom:16 }}>✓ {success}</div>}
+      {error && <div style={{ background: 'rgba(248,81,73,.1)', border: '1px solid rgba(248,81,73,.3)', borderRadius: 6, padding: '10px 14px', fontSize: 13, color: 'var(--red)', marginBottom: 16 }}>✕ {error}</div>}
+      {success && <div style={{ background: 'rgba(63,185,80,.1)', border: '1px solid rgba(63,185,80,.3)', borderRadius: 6, padding: '10px 14px', fontSize: 13, color: 'var(--green)', marginBottom: 16 }}>✓ {success}</div>}
 
-      {/* Add/Edit form */}
+      {/* Add/Edit form (Admin) */}
       {showForm && (
         <CardForm
           card={editing}
@@ -107,216 +125,159 @@ export default function Cards() {
         />
       )}
 
+      {/* Note-Only Form (Staff/All) */}
+      {noteEditing && (
+        <div style={{ background: 'var(--panel)', border: '1px solid var(--blue)', borderLeftWidth: 4, borderRadius: 10, padding: 20, marginBottom: 20 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--blue)', fontFamily: 'var(--mono)' }}>📝 ADD NOTE FOR: {noteEditing.card_uid}</span>
+            <button onClick={() => setNoteEditing(null)} style={{ background: 'none', border: 'none', color: 'var(--dim)', cursor: 'pointer', fontSize: 18 }}>✕</button>
+          </div>
+          <textarea
+            value={noteText}
+            onChange={e => setNoteText(e.target.value)}
+            placeholder="Why was this card skipped?"
+            autoFocus
+            style={{ width: '100%', minHeight: 80, background: 'var(--panel2)', border: '1px solid var(--border2)', borderRadius: 7, color: 'var(--text)', padding: 10, outline: 'none', fontSize: 13 }}
+          />
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 12 }}>
+            <button onClick={() => setNoteEditing(null)} style={{ background: 'transparent', border: 'none', color: 'var(--dim)', cursor: 'pointer', fontSize: 13 }}>Cancel</button>
+            <button onClick={saveNoteOnly} style={{ background: 'var(--blue)', color: '#fff', border: 'none', padding: '7px 16px', borderRadius: 6, fontWeight: 600, cursor: 'pointer' }}>Save Note</button>
+          </div>
+        </div>
+      )}
+
       {/* Search */}
       <div style={{ position: 'relative', marginBottom: 20 }}>
         <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--dim)', pointerEvents: 'none' }}>🔍</span>
-        <input type="text" placeholder="Search by card UID or visitor name…" value={search} onChange={e => setSearch(e.target.value)}
+        <input type="text" placeholder="Search by card UID..." value={search} onChange={e => setSearch(e.target.value)}
           style={{ width: '100%', background: 'var(--panel2)', border: '1px solid var(--border2)', borderRadius: 8, padding: '9px 14px 9px 36px', fontSize: 13, color: 'var(--text)', fontFamily: 'var(--sans)', outline: 'none' }} />
       </div>
 
-      {/* Selected card info panel */}
-      {selectedCard && (
-        <div style={{ marginBottom: 20, padding: 16, background: 'var(--panel2)', border: '1px solid var(--blue)', borderLeftWidth: 4, borderRadius: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--blue)', fontFamily: 'var(--mono)', marginBottom: 4 }}>SELECTED CARD DETAILS</div>
-            <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>{selectedCard.card_uid}</div>
-            <div style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.6 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                <strong>Last Note:</strong>
-                {/* ── Clear note button in info panel ── */}
-                {selectedCard.last_note && isAdmin && (
-                  <button
-                    onClick={() => handleClearNote(selectedCard)}
-                    style={{ padding: '2px 9px', borderRadius: 5, fontSize: 11, fontFamily: 'var(--sans)', cursor: 'pointer', background: 'rgba(248,81,73,.1)', border: '1px solid rgba(248,81,73,.3)', color: 'var(--red)', lineHeight: 1.5, transition: 'background .15s' }}
-                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(248,81,73,.2)'}
-                    onMouseLeave={e => e.currentTarget.style.background = 'rgba(248,81,73,.1)'}
-                  >
-                    ✕ Clear note
-                  </button>
-                )}
-              </div>
-              <span style={{ color: selectedCard.last_note ? 'var(--text)' : 'var(--dim)' }}>
-                {selectedCard.last_note || 'No notes recorded for this card.'}
-              </span>
-            </div>
-          </div>
-          <button onClick={() => setSelectedCard(null)} style={{ background: 'none', border: 'none', color: 'var(--dim)', cursor: 'pointer', fontSize: 18, flexShrink: 0 }}>✕</button>
-        </div>
-      )}
-
-      {/* Two-column grid */}
+      {/* Grid */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-            <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--green)', boxShadow: '0 0 6px var(--green)' }} />
-            <span style={{ fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 600, color: 'var(--green)', letterSpacing: '.1em', textTransform: 'uppercase' }}>Available — {available.length}</span>
-          </div>
+        <section>
+          <div style={{ marginBottom: 12, color: 'var(--green)', fontSize: 11, fontWeight: 600 }}>AVAILABLE — {available.length}</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {available.length === 0 ? (
-              <div style={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 10, padding: 24, textAlign: 'center', color: 'var(--dim)', fontSize: 13 }}>{search ? 'No available cards match.' : 'No available cards.'}</div>
-            ) : available.map(c => (
-              <CardItem key={c.card_id} card={c} isAdmin={isAdmin} isSelected={selectedCard?.card_id === c.card_id}
-                onClick={() => setSelectedCard(selectedCard?.card_id === c.card_id ? null : c)}
-                onEdit={() => { setEditing(c); setShowForm(true); }}
-                onDelete={() => handleDelete(c)} />
-            ))}
+            {available.map(c => <CardItem key={c.card_id} card={c} isAdmin={isAdmin} onEditNote={() => openNoteEditor(c)} onEdit={() => { setEditing(c); setShowForm(true); }} onDelete={() => handleDelete(c)} />)}
           </div>
-        </div>
-
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-            <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--blue)' }} />
-            <span style={{ fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 600, color: 'var(--blue)', letterSpacing: '.1em', textTransform: 'uppercase' }}>Assigned — {assigned.length}</span>
-          </div>
+        </section>
+        <section>
+          <div style={{ marginBottom: 12, color: 'var(--blue)', fontSize: 11, fontWeight: 600 }}>ASSIGNED — {assigned.length}</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {assigned.length === 0 ? (
-              <div style={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 10, padding: 24, textAlign: 'center', color: 'var(--dim)', fontSize: 13 }}>{search ? 'No assigned cards match.' : 'No cards currently assigned.'}</div>
-            ) : assigned.map(c => (
-              <CardItem key={c.card_id} card={c} isAdmin={isAdmin} isSelected={selectedCard?.card_id === c.card_id}
-                onClick={() => setSelectedCard(selectedCard?.card_id === c.card_id ? null : c)}
-                onEdit={() => { setEditing(c); setShowForm(true); }}
-                onDelete={() => handleDelete(c)} />
-            ))}
+            {assigned.map(c => <CardItem key={c.card_id} card={c} isAdmin={isAdmin} onEditNote={() => openNoteEditor(c)} onEdit={() => { setEditing(c); setShowForm(true); }} onDelete={() => handleDelete(c)} />)}
           </div>
-        </div>
-
+        </section>
       </div>
 
-      {/* Damaged / Lost */}
       {showDamaged && (
         <div style={{ marginTop: 28 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
-            <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--red)' }} />
-            <span style={{ fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 600, color: 'var(--red)', letterSpacing: '.1em', textTransform: 'uppercase' }}>Damaged / Lost / Retired — {damaged.length}</span>
-            <div style={{ flex: 1, height: 1, background: 'rgba(248,81,73,.2)' }} />
+          <div style={{ color: 'var(--red)', fontSize: 11, fontWeight: 600, marginBottom: 14 }}>DAMAGED / LOST — {damaged.length}</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: 10 }}>
+            {damaged.map(c => <CardItem key={c.card_id} card={c} isAdmin={isAdmin} onEditNote={() => openNoteEditor(c)} onEdit={() => { setEditing(c); setShowForm(true); }} onDelete={() => handleDelete(c)} />)}
           </div>
-          {damaged.length === 0 ? (
-            <div style={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 10, padding: 24, textAlign: 'center', color: 'var(--dim)', fontSize: 13 }}>No damaged or lost cards.</div>
-          ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: 10 }}>
-              {damaged.map(c => (
-                <CardItem key={c.card_id} card={c} isAdmin={isAdmin} isSelected={selectedCard?.card_id === c.card_id}
-                  onClick={() => setSelectedCard(selectedCard?.card_id === c.card_id ? null : c)}
-                  onEdit={() => { setEditing(c); setShowForm(true); }}
-                  onDelete={() => handleDelete(c)} />
-              ))}
-            </div>
-          )}
         </div>
       )}
     </div>
   );
 }
 
-// ── Card Item ─────────────────────────────────────────────────
-function CardItem({ card: c, isAdmin, onEdit, onDelete, onClick, isSelected }) {
+function CardItem({ card: c, isAdmin, onEdit, onDelete, onEditNote }) {
   const colorMap = {
-    available: { text: 'var(--green)',  border: 'rgba(63,185,80,.2)',   glow: true  },
-    assigned:  { text: 'var(--blue)',   border: 'rgba(56,139,253,.25)', glow: false },
-    lost:      { text: 'var(--red)',    border: 'rgba(248,81,73,.2)',   glow: false },
-    retired:   { text: 'var(--purple)', border: 'rgba(163,113,247,.2)', glow: false },
+    available: { text: 'var(--green)', border: 'rgba(63,185,80,.2)' },
+    assigned: { text: 'var(--blue)', border: 'rgba(56,139,253,.25)' },
+    lost: { text: 'var(--red)', border: 'rgba(248,81,73,.2)' },
+    retired: { text: 'var(--purple)', border: 'rgba(163,113,247,.2)' },
   };
+const getSubtext = () => {
+  if (c.visitor_name) return c.visitor_name;
+  if (c.status === 'lost' || c.status === 'retired') return ` Unavailable${c.last_note ? ': ' + c.last_note : ''}`;
+  if (c.last_note) return `📝 ${c.last_note}`;
+  return 'Ready to assign';
+};
+
+
   const col = colorMap[c.status] || colorMap.available;
 
   return (
-    <div onClick={onClick}
-      style={{ background: 'var(--panel)', border: `1px solid ${isSelected ? col.text : col.border}`, borderRadius: 10, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12, transition: 'all .15s', cursor: 'pointer', boxShadow: isSelected ? `0 0 8px ${col.text}33` : 'none', opacity: c.status === 'retired' ? .65 : 1 }}
-      onMouseEnter={e => { if (!isSelected) e.currentTarget.style.borderColor = col.text + '55'; }}
-      onMouseLeave={e => { if (!isSelected) e.currentTarget.style.borderColor = col.border; }}
-    >
-      <div style={{ width: 8, height: 8, borderRadius: '50%', background: col.text, flexShrink: 0, boxShadow: col.glow ? `0 0 6px ${col.text}` : 'none' }} />
+    
+    <div style={{ background: 'var(--panel)', border: `1px solid ${col.border}`, borderRadius: 10, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div style={{ width: 8, height: 8, borderRadius: '50%', background: col.text }} />
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontFamily: 'var(--mono)', fontSize: 14, fontWeight: 600, color: col.text, marginBottom: 2 }}>{c.card_uid}</div>
-        <div style={{ fontSize: 12, color: c.visitor_name ? 'var(--text)' : 'var(--dim)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {c.visitor_name || (c.last_note ? '📝 Has note' : 'Ready to assign')}
-        </div>
+        <div style={{ fontFamily: 'var(--mono)', fontSize: 14, fontWeight: 600, color: col.text }}>{c.card_uid}</div>
+        {/* FIX 3: Restore visitor name display */}
+<div style={{ fontSize: 12, color: (c.visitor_name || c.status === 'lost' || c.status === 'retired') ? 'var(--text)' : 'var(--dim)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+  {getSubtext()}
+</div>
       </div>
-      {isAdmin && (
-        <div style={{ display: 'flex', gap: 6, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
-          <button onClick={onEdit} title="Edit"
-            style={{ width: 26, height: 26, borderRadius: 6, background: 'transparent', border: '1px solid var(--border2)', color: 'var(--dim)', cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✏</button>
-          {c.status !== 'assigned' && (
-            <button onClick={onDelete} title="Delete"
-              style={{ width: 26, height: 26, borderRadius: 6, background: 'transparent', border: '1px solid rgba(248,81,73,.25)', color: 'var(--red)', cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>🗑</button>
-          )}
-        </div>
-      )}
+      <div style={{ display: 'flex', gap: 6 }}>
+        {/* FIX 2: Only show Note button to Staff, Pencil/Trash to Admin */}
+        {!isAdmin ? (
+          <button onClick={onEditNote} title="Add Note" style={{ width: 26, height: 26, borderRadius: 6, background: 'transparent', border: '1px solid var(--border2)', cursor: 'pointer', fontSize: 12 }}>📝</button>
+        ) : (
+          <>
+            <button onClick={onEdit} title="Edit" style={{ width: 26, height: 26, borderRadius: 6, background: 'transparent', border: '1px solid var(--border2)', cursor: 'pointer', fontSize: 12 }}>✏</button>
+            {c.status !== 'assigned' && (
+              <button onClick={onDelete} title="Delete" style={{ width: 26, height: 26, borderRadius: 6, background: 'transparent', border: '1px solid rgba(248,81,73,.25)', color: 'var(--red)', cursor: 'pointer', fontSize: 12 }}>🗑</button>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }
 
-// ── Card Form ─────────────────────────────────────────────────
 function CardForm({ card, onClose, onSaved, onError }) {
-  const [cardUid,    setCardUid]    = useState(card?.card_uid  || '');
-  const [status,     setStatus]     = useState(card?.status    || 'available');
-  const [lastNote,   setLastNote]   = useState(card?.last_note || '');
+  const [cardUid, setCardUid] = useState(card?.card_uid || '');
+  const [status, setStatus] = useState(card?.status || 'available');
+  const [lastNote, setLastNote] = useState(card?.last_note || '');
   const [submitting, setSubmitting] = useState(false);
 
   async function handleSubmit(e) {
     e.preventDefault();
     setSubmitting(true);
     try {
-      if (card) { await api.patch(`/cards/${card.card_id}`, { card_uid: cardUid, status, last_note: lastNote }); }
-      else       { await api.post('/cards', { card_uid: cardUid }); }
+      if (card) await api.patch(`/cards/${card.card_id}`, { card_uid: cardUid, status, last_note: lastNote });
+      else await api.post('/cards', { card_uid: cardUid });
       onSaved();
     } catch (err) { onError(err.response?.data?.error || 'Save failed.'); }
     setSubmitting(false);
   }
 
-  const s = { background: 'var(--panel2)', border: '1px solid var(--border2)', borderRadius: 7, padding: '9px 12px', fontSize: 13, color: 'var(--text)', fontFamily: 'var(--sans)', outline: 'none', width: '100%' };
-  const l = { fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '.1em', color: 'var(--dim)' };
+  const s = { background: 'var(--panel2)', border: '1px solid var(--border2)', borderRadius: 7, padding: '9px 12px', fontSize: 13, color: 'var(--text)', width: '100%', outline: 'none' };
+  const l = { fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '.1em', color: 'var(--dim)', marginBottom: 4, display: 'block' };
 
   return (
-    <div style={{ background: 'var(--panel)', border: '1px solid var(--border2)', borderRadius: 10, overflow: 'hidden', marginBottom: 20 }}>
-      <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <span style={{ fontSize: 14, fontWeight: 600 }}>{card ? 'Edit Card' : 'Add New Card'}</span>
-        <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--dim)', cursor: 'pointer', fontSize: 16 }}>✕</button>
-      </div>
+    <div style={{ background: 'var(--panel)', border: '1px solid var(--border2)', borderRadius: 10, marginBottom: 20 }}>
       <form onSubmit={handleSubmit} style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: card ? '1fr 1fr' : '1fr', gap: 14 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <label style={l}>CARD UID *</label>
-            <input value={cardUid} onChange={e => setCardUid(e.target.value)} required style={s} />
-          </div>
-          {card && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <label style={l}>STATUS</label>
-              <select value={status} onChange={e => setStatus(e.target.value)} style={s}>
-                {STATUSES.map(st => (
-                  <option key={st} value={st} disabled={st === 'assigned'}>
-                    {st.charAt(0).toUpperCase() + st.slice(1)}{st === 'assigned' ? ' (auto-managed)' : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
+        <div>
+          <label style={l}>CARD UID</label>
+          <input value={cardUid} onChange={e => setCardUid(e.target.value)} placeholder="Enter UID..." required style={s} />
         </div>
-
+        
         {card && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {/* Label row with inline clear button */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <label style={l}>INTERNAL NOTE</label>
-              {lastNote && (
-                <button type="button" onClick={() => setLastNote('')}
-                  style={{ padding: '2px 9px', borderRadius: 5, fontSize: 11, fontFamily: 'var(--sans)', cursor: 'pointer', background: 'rgba(248,81,73,.1)', border: '1px solid rgba(248,81,73,.3)', color: 'var(--red)', lineHeight: 1.5, transition: 'background .15s' }}
-                  onMouseEnter={e => e.currentTarget.style.background = 'rgba(248,81,73,.2)'}
-                  onMouseLeave={e => e.currentTarget.style.background = 'rgba(248,81,73,.1)'}>
-                  ✕ Clear note
-                </button>
-              )}
-            </div>
-            <textarea value={lastNote} onChange={e => setLastNote(e.target.value)}
-              placeholder="Maintenance notes or lost reason…"
-              style={{ ...s, minHeight: 60, resize: 'vertical' }} />
+          <div>
+            <label style={l}>STATUS</label>
+            <select value={status} onChange={e => setStatus(e.target.value)} style={s}>
+              {/* FIX 1: Prevent manual assignment via dropdown */}
+              {STATUSES.map(st => (
+                <option key={st} value={st} disabled={st === 'assigned' && status !== 'assigned'}>
+                  {st.charAt(0).toUpperCase() + st.slice(1)}
+                  {st === 'assigned' ? ' (auto-managed)' : ''}
+                </option>
+              ))}
+            </select>
           </div>
         )}
 
-        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-          <button type="button" onClick={onClose} style={{ padding: '8px 18px', borderRadius: 7, fontSize: 13, fontFamily: 'var(--sans)', cursor: 'pointer', background: 'transparent', border: '1px solid var(--border2)', color: 'var(--dim)' }}>Cancel</button>
-          <button type="submit" disabled={submitting} style={{ padding: '8px 20px', borderRadius: 7, fontSize: 13, fontWeight: 600, fontFamily: 'var(--sans)', cursor: 'pointer', background: 'var(--blue)', color: '#fff', border: 'none', opacity: submitting ? .6 : 1 }}>
-            {submitting ? 'Saving…' : card ? 'Save Changes' : 'Add Card'}
+        <div>
+          <label style={l}>INTERNAL NOTE</label>
+          <textarea value={lastNote} onChange={e => setLastNote(e.target.value)} placeholder="Maintenance notes..." style={{ ...s, minHeight: 60, resize: 'vertical' }} />
+        </div>
+
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 6 }}>
+          <button type="button" onClick={onClose} style={{ cursor: 'pointer', background: 'none', border: 'none', color: 'var(--dim)', fontSize: 13 }}>Cancel</button>
+          <button type="submit" disabled={submitting} style={{ cursor: 'pointer', background: 'var(--blue)', color: '#fff', border: 'none', padding: '8px 20px', borderRadius: 7, fontWeight: 600, fontSize: 13, opacity: submitting ? .6 : 1 }}>
+            {submitting ? 'Saving...' : 'Save Changes'}
           </button>
         </div>
       </form>

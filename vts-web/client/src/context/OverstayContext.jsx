@@ -21,7 +21,7 @@ export function OverstayProvider({ children }) {
 
   useEffect(() => {
     check();
-    const interval = setInterval(check, 60 * 1000); // every 60s
+  const interval = setInterval(check, 15 * 1000); // every 15s — matches dashboard
     return () => clearInterval(interval);
   }, []);
 

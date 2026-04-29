@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import api from '../api';
+import { useNavigate } from 'react-router-dom';
 import useCardReader from '../hooks/useCardReader';
 
 const PURPOSES = ['Business Meeting', 'Interview', 'Maintenance / Repair', 'Delivery', 'Government Official', 'Other'];
@@ -95,6 +96,7 @@ export default function CheckIn() {
   const [result,      setResult]      = useState(null);
   const [allVisitors, setAllVisitors] = useState([]);
   const [departments, setDepartments] = useState([]);
+  const [savedForm,   setSavedForm]   = useState(null); // ← saves form when going to card assign
 
   useEffect(() => {
     Promise.all([api.get('/visitors'), api.get('/departments')]).then(([vRes, dRes]) => {
@@ -103,23 +105,47 @@ export default function CheckIn() {
     });
   }, [step]);
 
-  function handleReset() { setVisitor(null); setResult(null); setStep('new-visitor'); }
+  function handleReset() { setVisitor(null); setResult(null); setSavedForm(null); setStep('new-visitor'); }
 
-  if (step === 'new-visitor')    return <NewVisitorForm departments={departments} allVisitors={allVisitors} onDone={v => { setVisitor(v); setStep('card-assign'); }} />;
-  if (step === 'walkin-details') return <WalkInDetailsForm visitor={visitor} departments={departments} onBack={() => setStep('new-visitor')} onDone={v => { setVisitor(v); setStep('card-assign'); }} />;
-  if (step === 'card-assign')    return <CardAssignment visitor={visitor} departments={departments} onBack={() => setStep('new-visitor')} onDone={r => { setResult(r); setStep('success'); }} />;
-  if (step === 'success')        return <SuccessScreen result={result} onReset={handleReset} />;
+  if (step === 'new-visitor')
+    return <NewVisitorForm
+      departments={departments}
+      allVisitors={allVisitors}
+      initialData={savedForm}         
+      onDone={(v, formSnapshot) => {
+        setSavedForm(formSnapshot);   
+        setVisitor(v);
+        setStep('card-assign');
+      }}
+    />;
+
+  if (step === 'walkin-details')
+    return <WalkInDetailsForm visitor={visitor} departments={departments}
+      onBack={() => setStep('new-visitor')}
+      onDone={v => { setVisitor(v); setStep('card-assign'); }} />;
+
+  if (step === 'card-assign')
+    return <CardAssignment visitor={visitor} departments={departments}
+      onBack={() => setStep('new-visitor')}   // savedForm is already set, so form restores
+      onDone={r => { setResult(r); setStep('success'); }} />;
+
+  if (step === 'success')
+    return <SuccessScreen result={result} onReset={handleReset} />;
 }
 
 // ── New Visitor Form ──────────────────────────────────────────
-function NewVisitorForm({ departments, allVisitors, onDone }) {
-  const [form,        setForm]        = useState({ full_name:'', cpr_number:'', phone:'', email:'', company:'' });
-  const [visitData,   setVisitData]   = useState({ host_employee:'', purpose:'', department_id:null, notes:'' });
+function NewVisitorForm({ departments, allVisitors, onDone, initialData }) {
+  const [form, setForm] = useState(initialData?.form || { full_name:'', cpr_number:'', phone:'', email:'', company:'' });
+  const [visitData, setVisitData] = useState(initialData?.visitData || { host_employee:'', purpose:'', department_id:null, notes:'' });
+  const [cardScanned, setCardScanned] = useState(initialData?.cardScanned || false);
+  const [returning,   setReturning]   = useState(initialData?.returning   || false);
+
+//  const [visitData,   setVisitData]   = useState({ host_employee:'', purpose:'', department_id:null, notes:'' });
   const [flagInfo,    setFlagInfo]    = useState(null);
   const [submitting,  setSubmitting]  = useState(false);
   const [error,       setError]       = useState('');
-  const [cardScanned, setCardScanned] = useState(false);
-  const [returning,   setReturning]   = useState(false); // true when matched a past visitor
+ // const [cardScanned, setCardScanned] = useState(false);
+ // const [returning,   setReturning]   = useState(false); // true when matched a past visitor
   const [showPastList,setShowPastList]= useState(false);
   const [search,      setSearch]      = useState('');
 
@@ -142,7 +168,7 @@ function NewVisitorForm({ departments, allVisitors, onDone }) {
       setForm({
         full_name:  existing.full_name  || String(nameRaw).trim()  || '',
         cpr_number: cpr,
-        phone:      existing.phone      || String(phoneRaw).trim() || '',
+        phone: (existing.phone || String(phoneRaw).trim() || '').replace(/^\+?973/, ''),
         email:      existing.email      || '',
         company:    existing.company    || String(compRaw).trim()  || '',
       });
@@ -153,7 +179,7 @@ function NewVisitorForm({ departments, allVisitors, onDone }) {
         ...p,
         cpr_number: cpr,
         full_name:  String(nameRaw).trim()  || p.full_name,
-        phone:      String(phoneRaw).trim() || p.phone,
+        phone: String(phoneRaw).trim().replace(/^\+?973/, '') || p.phone,
         company:    String(compRaw).trim()  || p.company,
       }));
       setReturning(false);
@@ -192,19 +218,29 @@ function NewVisitorForm({ departments, allVisitors, onDone }) {
     return () => clearTimeout(t);
   }, [form.cpr_number, cardScanned]);
 
-  async function handleSubmit(e) {
-    e.preventDefault();
-    if (flagInfo)                 { setError('Cannot check in a flagged visitor.'); return; }
-    if (!visitData.department_id) { setError('Department is required.'); return; }
-    if (!visitData.purpose)       { setError('Purpose is required.'); return; }
-    setError(''); setSubmitting(true);
-    try {
-      const { data } = await api.post('/visitors', { ...form });
-      const dept = departments.find(d => String(d.department_id) === String(visitData.department_id));
-      onDone({ ...data, ...visitData, department_name: dept?.name||null, floor: dept?.floor||null });
-    } catch (err) { setError(err.response?.data?.error || 'Registration failed.'); }
-    setSubmitting(false);
-  }
+async function handleSubmit(e) {
+  e.preventDefault();
+  if (flagInfo)                 { setError('Cannot check in a flagged visitor.'); return; }
+  if (!visitData.department_id) { setError('Department is required.'); return; }
+  if (!visitData.purpose)       { setError('Purpose is required.'); return; }
+  setError(''); setSubmitting(true);
+  try {
+    const { data } = await api.post('/visitors', {
+      ...form,
+      phone: form.phone ? `+973${form.phone.replace(/^\+?973/, '')}` : null,
+    });
+    const dept = departments.find(d => String(d.department_id) === String(visitData.department_id));
+
+    // Save a snapshot so going back restores everything
+    const snapshot = { form, visitData, cardScanned, returning };
+
+    onDone(
+      { ...data, ...visitData, department_name: dept?.name||null, floor: dept?.floor||null },
+      snapshot   // ← second argument
+    );
+  } catch (err) { setError(err.response?.data?.error || 'Registration failed.'); }
+  setSubmitting(false);
+}
 
   function fs(locked) {
     return {
@@ -266,7 +302,13 @@ function NewVisitorForm({ departments, allVisitors, onDone }) {
               <div style={{ fontFamily:'var(--mono)', fontSize:12, color:'var(--dim)' }}>{v.cpr_number}</div>
               <div style={{ fontSize:13, color:'var(--dim)' }}>{v.company||'—'}</div>
               <button onClick={() => {
-                  setForm({ full_name:v.full_name, cpr_number:v.cpr_number, phone:v.phone||'', email:v.email||'', company:v.company||'' });
+                  setForm({ 
+  full_name: v.full_name, 
+  cpr_number: v.cpr_number, 
+  phone: (v.phone || '').replace(/^\+?973/, ''), 
+  email: v.email || '', 
+  company: v.company || '' 
+});
                   setCardScanned(true);
                   setReturning(true);
                   setShowPastList(false);
@@ -356,14 +398,35 @@ function NewVisitorForm({ departments, allVisitors, onDone }) {
               </div>
             </div>
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
-              <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
-                <label style={l}>PHONE</label>
-                <input value={form.phone} onChange={e => setForm(p=>({...p,phone:e.target.value}))} placeholder="+973 XXXX XXXX" style={fs(false)} />
-              </div>
-              <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
-                <label style={l}>COMPANY</label>
-                <input value={form.company} onChange={e => setForm(p=>({...p,company:e.target.value}))} placeholder="Optional" style={fs(false)} />
-              </div>
+            <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+               <label style={l}>PHONE</label>
+              <div style={{ display:'flex', alignItems:'center', gap:0 }}>
+               <span style={{ background:'var(--panel)', border:'1px solid var(--border2)', borderRight:'none', borderRadius:'7px 0 0 7px', padding:'9px 10px', fontSize:13, color:'var(--dim)', fontFamily:'var(--mono)', whiteSpace:'nowrap' }}>+973</span>
+               <input
+                value={form.phone}
+                onChange={e => {
+                const digits = e.target.value.replace(/\D/g, '').slice(0, 8);
+                setForm(p => ({ ...p, phone: digits }));
+                 }}
+                 placeholder="XXXX XXXX"
+                 maxLength={8}
+                 style={{ ...fs(false), borderRadius:'0 7px 7px 0', borderLeft:'none' }}
+                 />
+                 </div>
+                {/* <span style={{ fontFamily:'var(--mono)', fontSize:10, color:'var(--faint)' }}>{form.phone.length}/8 digits</span> */}
+              </div> 
+          <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+              <label style={l}>COMPANY</label>
+              <input
+              value={form.company}
+              onChange={e => setForm(p => ({ ...p, company: e.target.value.slice(0, 35) }))}
+              placeholder="Optional"
+              maxLength={35}
+              style={fs(false)}/>
+            <span style={{ fontFamily:'var(--mono)', fontSize:10, color: form.company.length >= 30 ? 'var(--amber)' : 'var(--faint)', textAlign:'right' }}>
+              {form.company.length}/35
+            </span>
+          </div>
             </div>
           </div>
         </div>
@@ -452,7 +515,7 @@ function CardAssignment({ visitor, departments, onBack, onDone }) {
       const { data: cards } = await api.get('/cards');
       const available = cards
         .filter(c => c.status === 'available' && (!excludeId || c.card_id !== excludeId))
-        .sort((a, b) => (a.total_uses || 0) - (b.total_uses || 0));
+        .sort((a, b) => a.card_id - b.card_id); 
       if (available.length === 0) { setAssignError('no_cards'); setAssigning(false); return; }
       setAssignedCard(available[0]);
       setAssigning(false);
@@ -532,25 +595,61 @@ function CardAssignment({ visitor, departments, onBack, onDone }) {
 
 // ── Success Screen ────────────────────────────────────────────
 function SuccessScreen({ result, onReset }) {
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      navigate('/dashboard');
+    }, 5000);
+
+    return () => clearTimeout(timer);
+  }, [navigate]);
+
   return (
-    <div style={{ padding:24, maxWidth:480, margin:'60px auto 0', textAlign:'center' }} className="fade-in">
-      <div style={{ background:'var(--panel)', border:'1px solid var(--border)', borderRadius:14, padding:'48px 40px' }}>
-        <div style={{ fontSize:56, marginBottom:16 }}>✅</div>
-        <h2 style={{ fontSize:22, fontWeight:700, color:'var(--green)', marginBottom:8 }}>Check-In Complete</h2>
-        <p style={{ fontSize:14, color:'var(--dim)', marginBottom:24 }}>
-          Card <strong style={{ color:'var(--blue)' }}>{result.card.card_uid}</strong> handed to <strong>{result.visitor.full_name}</strong>
+    <div style={{ padding: 24, maxWidth: 480, margin: '60px auto 0', textAlign: 'center' }} className="fade-in">
+      <div style={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 14, padding: '48px 40px' }}>
+        <div style={{ fontSize: 56, marginBottom: 16 }}>✅</div>
+        <h2 style={{ fontSize: 22, fontWeight: 700, color: 'var(--green)', marginBottom: 8 }}>Check-In Complete</h2>
+        <p style={{ fontSize: 14, color: 'var(--dim)', marginBottom: 24 }}>
+          Card <strong style={{ color: 'var(--blue)' }}>{result.card.card_uid}</strong> handed to <strong>{result.visitor.full_name}</strong>
         </p>
-        <div style={{ background:'var(--panel2)', borderRadius:8, padding:16, marginBottom:24, textAlign:'left', display:'flex', flexDirection:'column', gap:10 }}>
-          {[['Visitor',result.visitor.full_name],['CPR',result.visitor.cpr_number],['Host',result.visitor.host_employee||'—'],['Department',result.visitor.department_name||'—'],['Floor',result.visitor.floor||'—'],['Card',result.card.card_uid],['Time',new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})]].map(([label,value])=>(
-            <div key={label} style={{ display:'flex', gap:12, fontSize:13 }}>
-              <span style={{ fontFamily:'var(--mono)', fontSize:10, color:'var(--dim)', letterSpacing:'.1em', textTransform:'uppercase', minWidth:80, paddingTop:2 }}>{label}</span>
-              <strong style={{ color:label==='Floor'?'var(--blue)':'var(--text)' }}>{value}</strong>
+        
+        <div style={{ background: 'var(--panel2)', borderRadius: 8, padding: 16, marginBottom: 24, textAlign: 'left', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {[
+            ['Visitor', result.visitor.full_name],
+            ['CPR', result.visitor.cpr_number],
+            ['Host', result.visitor.host_employee || '—'],
+            ['Department', result.visitor.department_name || '—'],
+            ['Floor', result.visitor.floor || '—'],
+            ['Card', result.card.card_uid],
+            ['Time', new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })]
+          ].map(([label, value]) => (
+            <div key={label} style={{ display: 'flex', gap: 12, fontSize: 13 }}>
+              <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--dim)', letterSpacing: '.1em', textTransform: 'uppercase', minWidth: 80, paddingTop: 2 }}>{label}</span>
+              <strong style={{ color: label === 'Floor' ? 'var(--blue)' : 'var(--text)' }}>{value}</strong>
             </div>
           ))}
         </div>
-        <button onClick={onReset} style={{ background:'var(--blue)', color:'#fff', border:'none', borderRadius:8, padding:'10px 28px', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'var(--sans)' }}>
-          ✚ New Check-In
-        </button>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <button 
+            onClick={onReset} 
+            style={{ background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 8, padding: '12px 28px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--sans)' }}
+          >
+            ✚ New Check-In
+          </button>
+          
+          <button 
+            onClick={() => navigate('/dashboard')} 
+            style={{ background: 'transparent', color: 'var(--dim)', border: 'none', fontSize: 12, cursor: 'pointer', textDecoration: 'underline' }}
+          >
+            Go to Dashboard now
+          </button>
+        </div>
+        
+        <p style={{ fontSize: 11, color: 'var(--faint)', marginTop: 20 }}>
+          Redirecting to dashboard in 5 seconds...
+        </p>
       </div>
     </div>
   );

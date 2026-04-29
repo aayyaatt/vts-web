@@ -11,17 +11,12 @@ router.get('/visitors', auth, async (req, res) => {
     const { rows } = await pool.query(`
       SELECT
         v.*,
-        pr.host_employee AS pre_host, pr.purpose AS pre_purpose,
-        pr.department_id AS pre_department_id, pr.floor AS pre_floor,
-        pr.status AS pre_status, d.name AS pre_department_name,
         EXISTS (
           SELECT 1 FROM visits vt
           WHERE vt.visitor_id = v.visitor_id
           AND vt.status IN ('active','overstay')
         ) AS is_active_visit
       FROM visitors v
-      LEFT JOIN pre_registrations pr ON pr.visitor_id = v.visitor_id AND pr.status = 'pending'
-      LEFT JOIN departments d ON d.department_id = pr.department_id
       ORDER BY v.created_at DESC LIMIT 100
     `);
     res.json(rows);
@@ -338,36 +333,11 @@ router.get('/users', auth, async (req, res) => {
 //-- GOOGLE FORMS SUBMISSION -------------------------------------------
 router.post('/visits-from-form', async (req, res) => {
   const apiKey = req.headers['x-api-key'];
-  if (apiKey !== process.env.FORM_API_KEY) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-
-  const { full_name, cpr_number, phone, email, company, host_employee, purpose, department } = req.body;
-  if (!full_name || !cpr_number) {
-    return res.status(400).json({ error: 'full_name and cpr_number are required.' });
-  }
-
-  const client = await pool.connect();
+  if (apiKey !== process.env.FORM_API_KEY) return res.status(401).json({ error: 'Unauthorized' });
+  const { full_name, cpr_number, phone, email, company } = req.body;
+  if (!full_name || !cpr_number) return res.status(400).json({ error: 'full_name and cpr_number are required.' });
   try {
-    await client.query('BEGIN');
-
-    // Look up department
-    let department_id = null;
-    let floor = null;
-    if (department) {
-      const dRes = await client.query(
-        `SELECT department_id, floor FROM departments
-         WHERE LOWER(name) = LOWER($1) AND is_active = true`,
-        [department]
-      );
-      if (dRes.rows.length > 0) {
-        department_id = dRes.rows[0].department_id;
-        floor         = dRes.rows[0].floor;
-      }
-    }
-
-    // Upsert visitor only — no visit or card assignment
-    const vRes = await client.query(
+    const { rows } = await pool.query(
       `INSERT INTO visitors (full_name, cpr_number, phone, email, company)
        VALUES ($1,$2,$3,$4,$5)
        ON CONFLICT (cpr_number) DO UPDATE
@@ -375,28 +345,8 @@ router.post('/visits-from-form', async (req, res) => {
        RETURNING *`,
       [full_name, cpr_number, phone||null, email||null, company||null]
     );
-
-    // Store pre-registration details on the visitor record temporarily
-    // so security can see them when the visitor arrives
-    await client.query(
-      `INSERT INTO pre_registrations
-         (visitor_id, host_employee, purpose, department_id, floor, status)
-       VALUES ($1,$2,$3,$4,$5,'pending')
-       ON CONFLICT (visitor_id) DO UPDATE
-         SET host_employee=$2, purpose=$3, department_id=$4, floor=$5,
-             status='pending', created_at=now()`,
-      [vRes.rows[0].visitor_id, host_employee||null, purpose||null, department_id, floor]
-    );
-
-    await client.query('COMMIT');
-    res.json({ success: true, visitor: vRes.rows[0], message: 'Visitor registered. Security will complete check-in.' });
-
-  } catch (err) {
-    await client.query('ROLLBACK');
-    res.status(500).json({ error: err.message });
-  } finally {
-    client.release();
-  }
+    res.json({ success: true, visitor: rows[0] });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // -- USER MANAGEMENT (admin only) ------------------------------------------------------
@@ -555,19 +505,27 @@ router.post('/cards', auth, async (req, res) => {
 
 // PATCH update card status (admin only)
 router.patch('/cards/:id', auth, async (req, res) => {
-  if (req.user.role !== 'admin' && req.user.role !== 'manager')
-    return res.status(403).json({ error: 'Admin or manager only.' });
   const { status, card_uid, last_note } = req.body;
+  const isStaff = req.user.role !== 'admin' && req.user.role !== 'manager';
+
+  // FIX: If they are staff, they are ONLY allowed to send 'last_note'
+  if (isStaff) {
+    if (status !== undefined || card_uid !== undefined) {
+      return res.status(403).json({ error: 'Staff can only update notes, not status or UID.' });
+    }
+  }
+
   const validStatuses = ['available', 'assigned', 'lost', 'retired'];
   if (status && !validStatuses.includes(status))
     return res.status(400).json({ error: 'Invalid status.' });
+
   try {
     const { rows } = await pool.query(
       `UPDATE access_cards SET
-         status   = COALESCE($1, status),
-         card_uid = COALESCE($2, card_uid),
-         last_note = CASE WHEN $3::text IS NOT NULL THEN $3 ELSE last_note END
-       WHERE card_id = $4 RETURNING *`,
+           status   = COALESCE($1, status),
+           card_uid = COALESCE($2, card_uid),
+           last_note = CASE WHEN $3::text IS NOT NULL THEN $3 ELSE last_note END
+         WHERE card_id = $4 RETURNING *`,
       [status || null, card_uid || null, last_note !== undefined ? last_note : null, req.params.id]
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Card not found.' });
@@ -681,12 +639,12 @@ router.post('/cards/skip', auth, async (req, res) => {
     );
 
     // Get the next available card immediately
-    const nextRes = await client.query(
-      `SELECT * FROM access_cards 
-       WHERE status='available' AND card_id != $1 
-       ORDER BY COALESCE(total_uses,0) ASC LIMIT 1`,
-      [card_id]
-    );
+const nextRes = await client.query(
+  `SELECT * FROM access_cards 
+   WHERE status='available' AND card_id != $1 
+   ORDER BY card_id ASC LIMIT 1`,
+  [card_id]
+);
 
     await client.query('COMMIT');
     res.json({ success: true, next_card: nextRes.rows[0] || null });
