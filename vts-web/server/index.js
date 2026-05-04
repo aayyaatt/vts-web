@@ -49,19 +49,18 @@ const { spawn } = require('child_process');
 const pathLib  = require('path');
 const fsLib    = require('fs');
 
-// Auto-launch eRevealer.Gcc silently when server starts
-const erevealer = pathLib.join(__dirname, '..', 'card-reader','wine', 'eRevealer.Gcc.exe');
+const erevealer = pathLib.join(__dirname, '..', 'card-reader', 'eRevealer.Gcc.exe');
 if (fsLib.existsSync(erevealer)) {
-  const rdr = spawn(erevealer, [], {
+
+const rdr = spawn(erevealer, [], {
     detached:    true,
     windowsHide: true,
     stdio:       'ignore'
   });
+  
   rdr.unref();
-  console.log('[CARD READER] eRevealer.Gcc started in background');
+  console.log('[CARD READER] eRevealer.Gcc started via Wine');
 } else {
   console.warn('[CARD READER] eRevealer.Gcc.exe not found at:', erevealer);
-  console.warn('[CARD READER] Copy it to the card-reader folder');
 }
-
 start();

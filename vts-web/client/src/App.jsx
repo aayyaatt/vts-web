@@ -11,6 +11,7 @@ import Departments from './pages/Departments';
 import Visitors    from './pages/Visitors';
 import Layout      from './components/Layout';
 import CardReaderWidget      from './components/CardReaderWidget';
+import CardLogs from './pages/CardLogs';
 
 function Protected({ children }) {
   const { user } = useAuth();
@@ -33,7 +34,7 @@ export default function App() {
               <Route path="visitors"    element={<Visitors />} />
               <Route path="users"       element={<Users />} />
               <Route path="departments" element={<Departments />} />
-                <Route path="CardReaderWidget"   element={<CardReaderWidget />} />
+              <Route path="card-logs"   element={<CardLogs />} />
             </Route>
           </Routes>
         </BrowserRouter>
