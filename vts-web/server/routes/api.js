@@ -137,9 +137,14 @@ router.get('/visits/by-visitor/:visitor_id', auth, async (req, res) => {
 });
 
 // POST create new visit (check-in)
+// POST create new visit (check-in)
 router.post('/visits', auth, async (req, res) => {
   const { visitor_id, card_id, host_employee, purpose, notes, department_id } = req.body;
   if (!visitor_id) return res.status(400).json({ error: 'visitor_id is required.' });
+
+  // FIXED: Standardize the variable for the logged-in staff member
+  // Using req.user.user_id to match your definition logic
+  const staffId = req.user.user_id || req.user.userId; 
 
   const client = await pool.connect();
   try {
@@ -161,7 +166,7 @@ router.post('/visits', auth, async (req, res) => {
       });
     }
 
-    //  Get floor from department -------------------------------------------------------------
+    // Get floor from department -------------------------------------------------
     let floor = null;
     if (department_id) {
       const dRes = await client.query(
@@ -171,15 +176,16 @@ router.post('/visits', auth, async (req, res) => {
       floor = dRes.rows[0]?.floor || null;
     }
 
-    // Insert visit 
+    // 1. Insert visit (Using staffId for issued_by)
     const { rows } = await client.query(
       `INSERT INTO visits (visitor_id, card_id, host_employee, purpose, notes, issued_by, department_id, floor)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
       [visitor_id, card_id || null, host_employee, purpose, notes,
-       req.user.userId, department_id || null, floor]
+       staffId, department_id || null, floor]
     );
     const visit = rows[0];
 
+    // 2. Update Card Status
     if (card_id) {
       await client.query(
         `UPDATE access_cards SET status='assigned', visitor_id=$1 WHERE card_id=$2`,
@@ -187,17 +193,25 @@ router.post('/visits', auth, async (req, res) => {
       );
     }
 
-    // Mark pre-registration as completed if exists
+    // 3. NEW: Insert into card_logs so your Log UI shows data
+    await client.query(
+      `INSERT INTO card_logs (card_id, user_id, action, visitor_id, notes)
+       VALUES ($1, $2, 'CHECKIN', $3, $4)`,
+      [card_id, staffId, visitor_id, notes || purpose]
+    );
+
+    // Mark pre-registration as completed
     await client.query(
       `UPDATE pre_registrations SET status='completed'
        WHERE visitor_id = $1 AND status = 'pending'`,
       [visitor_id]
     );
 
+    // 4. Audit log (Using staffId)
     await client.query(
       `INSERT INTO audit_log (user_id, action, target_table, target_id, new_values)
        VALUES ($1,'CHECKIN','visits',$2,$3)`,
-      [req.user.userId, visit.visit_id,
+      [staffId, visit.visit_id,
        JSON.stringify({ visitor_id, card_id, host_employee, purpose, department_id, floor })]
     );
 
@@ -205,12 +219,12 @@ router.post('/visits', auth, async (req, res) => {
     res.status(201).json(visit);
   } catch (err) {
     await client.query('ROLLBACK');
+    console.error("Check-in Error:", err.message);
     res.status(500).json({ error: err.message });
   } finally {
     client.release();
   }
 });
-
 // PATCH check-out
 router.patch('/visits/:id/checkout', auth, async (req, res) => {
   const { id } = req.params;
@@ -653,6 +667,35 @@ const nextRes = await client.query(
     res.status(500).json({ error: err.message });
   } finally {
     client.release();
+  }
+});
+
+// -- CARD ACTIVITY LOGS -------------------------------------------------------
+
+// GET all card-specific activity logs
+router.get('/cards/logs', auth, async (req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT 
+        cl.log_id,
+        cl.created_at,
+        cl.action,
+        ac.card_uid,
+        cl.notes,
+        u.full_name as staff_name,
+        v.full_name as visitor_name,
+        v.company as visitor_company
+      FROM public.card_logs cl
+      JOIN public.access_cards ac ON cl.card_id = ac.card_id
+      LEFT JOIN public.users u ON cl.user_id = u.user_id
+      LEFT JOIN public.visitors v ON cl.visitor_id = v.visitor_id
+      ORDER BY cl.created_at DESC 
+      LIMIT 500
+    `);
+    res.json(rows);
+  } catch (err) {
+    console.error("Database Error:", err.message);
+    res.status(500).json({ error: "Could not fetch card logs. Ensure table card_logs is populated." });
   }
 });
 

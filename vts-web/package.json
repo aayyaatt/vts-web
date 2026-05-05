@@ -10,5 +10,9 @@
   },
   "devDependencies": {
     "concurrently": "^8.2.2"
+  },
+  "dependencies": {
+    "body-parser": "^2.2.2",
+    "http-proxy-middleware": "^3.0.5"
   }
 }

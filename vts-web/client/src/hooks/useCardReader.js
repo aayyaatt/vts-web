@@ -6,48 +6,31 @@ export default function useCardReader(onCardRead) {
   const [error, setError] = useState(null);
 
   const readCard = async () => {
-    try {
-      setStatus("reading");
+  try {
+    setStatus("reading");
+    setError(null);
 
-      const response = await fetch("/card-api/api/operation/ReadCard", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          ReadCardInfo: true,
-          ReadPersonalInfo: true,
-          ReadAddressDetails: true,
-          ReadBiometrics: false,
-          ReadEmploymentInfo: false,
-          ReadImmigrationDetails: false,
-          ReadTrafficDetails: false,
-          SilentReading: false,
-          ReaderIndex: -1,
-          ReaderName: "",
-          OutputFormat: "JSON",
-          ValidateCard: false
-        })
-      });
+    const response = await fetch("/api/card/read", {  
+      method: "POST",
+      headers: { "Content-Type": "application/json" }
+    });
 
-      const data = await response.json();
-
-      console.log("🔥 CARD DATA:", data);
-
-      setCardData(data);
-      setStatus("done");
-
-      if (onCardRead) {
-        onCardRead(data);
-      }
-
-    } catch (err) {
-      console.error("❌ ERROR:", err);
-      setError("Failed to read card");
-      setStatus("error");
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.error || "Read failed");
     }
-  };
 
+    const data = await response.json();
+    setCardData(data);
+    setStatus("done");
+    if (onCardRead) onCardRead(data);
+
+  } catch (err) {
+    console.error("❌ ERROR:", err);
+    setError(err.message || "Failed to read card");
+    setStatus("error");
+  }
+};
   const clearCard = () => {
     setCardData(null);
     setStatus("idle");

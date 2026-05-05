@@ -27,6 +27,7 @@ export default function Layout() {
     { to: '/logs',      icon: '📋', label: 'Access Logs'},
     ...(user?.role === 'admin' ? [
       { to: '/users',       icon: '👥', label: 'Users'       },
+      { to: '/card-logs',       icon: '📝', label: 'Card Logs'       },
       { to: '/departments', icon: '🏢', label: 'Departments' },
     ] : []),
   ];

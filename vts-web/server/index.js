@@ -3,11 +3,10 @@ const express    = require('express');
 const cors       = require('cors');
 const runMigrations = require('./db/migrate');
 
-// ── Overstay checker — runs every 5 minutes ───────────────────
 const pool = require('./db/pool');
 setInterval(async () => {
   try {
-    const threshold = 8; // hours — matches system_config
+    const threshold = 8; 
     await pool.query(`
       UPDATE visits
       SET status = 'overstay'
@@ -17,34 +16,34 @@ setInterval(async () => {
   } catch (err) {
     console.error('[OVERSTAY] Check failed:', err.message);
   }
-}, 5 * 60 * 1000); // every 5 minutes
+}, 5 * 60 * 1000); 
 
 const app  = express();
 const PORT = process.env.PORT || 5000;
 
-// ── Middleware ────────────────────────────────────────────────
+
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:5174'],
+  origin: true,
   credentials: true
 }));
+
 app.use(express.json());
 
-// ── Routes ────────────────────────────────────────────────────
+
+
+app.get('/api/health', (req, res) => res.json({ status: 'ok', time: new Date() }));
+
+//Start
+async function start() {
+  await runMigrations();
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`[VTS] Server running on ${PORT}`);
+  });
+}
+app.use('/api/card', require('./routes/card'));
 app.use('/api/auth',      require('./routes/auth'));
 app.use('/api/dashboard', require('./routes/dashboard'));
 app.use('/api',           require('./routes/api'));
-
-// Health check
-app.get('/api/health', (req, res) => res.json({ status: 'ok', time: new Date() }));
-
-// ── Start ─────────────────────────────────────────────────────
-async function start() {
-  await runMigrations();
-  app.listen(PORT, () => {
-    console.log(`[VTS] Server running on http://localhost:${PORT}`);
-  });
-}
-
 const { spawn } = require('child_process');
 const pathLib  = require('path');
 const fsLib    = require('fs');
