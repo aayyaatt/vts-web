@@ -518,11 +518,11 @@ router.post('/cards', auth, async (req, res) => {
 });
 
 // PATCH update card status (admin only)
+// PATCH update card status (admin only)
 router.patch('/cards/:id', auth, async (req, res) => {
   const { status, card_uid, last_note } = req.body;
   const isStaff = req.user.role !== 'admin' && req.user.role !== 'manager';
 
-  // FIX: If they are staff, they are ONLY allowed to send 'last_note'
   if (isStaff) {
     if (status !== undefined || card_uid !== undefined) {
       return res.status(403).json({ error: 'Staff can only update notes, not status or UID.' });
@@ -533,18 +533,90 @@ router.patch('/cards/:id', auth, async (req, res) => {
   if (status && !validStatuses.includes(status))
     return res.status(400).json({ error: 'Invalid status.' });
 
+  const client = await pool.connect();
   try {
-    const { rows } = await pool.query(
-      `UPDATE access_cards SET
-           status   = COALESCE($1, status),
-           card_uid = COALESCE($2, card_uid),
-           last_note = CASE WHEN $3::text IS NOT NULL THEN $3 ELSE last_note END
-         WHERE card_id = $4 RETURNING *`,
-      [status || null, card_uid || null, last_note !== undefined ? last_note : null, req.params.id]
+    await client.query('BEGIN');
+
+    // Get current card state before update
+    const currentRes = await client.query(
+      `SELECT ac.*, vi.visitor_id as assigned_visitor_id
+       FROM access_cards ac
+       LEFT JOIN visitors vi ON vi.visitor_id = ac.visitor_id
+       WHERE ac.card_id = $1`,
+      [req.params.id]
     );
-    if (rows.length === 0) return res.status(404).json({ error: 'Card not found.' });
+    if (currentRes.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Card not found.' });
+    }
+    const current = currentRes.rows[0];
+
+    // If restoring to available from damaged, clear the note
+    const wasUnavailable = current.status === 'lost' || current.status === 'retired';
+    const restoringToAvailable = status === 'available' && wasUnavailable;
+    const resolvedNote = restoringToAvailable ? '' : (last_note !== undefined ? last_note : null);
+
+    // Update the card
+    const { rows } = await client.query(
+      `UPDATE access_cards SET
+         status    = COALESCE($1, status),
+         card_uid  = COALESCE($2, card_uid),
+         last_note = CASE WHEN $3::text IS NOT NULL THEN $3 ELSE last_note END
+       WHERE card_id = $4 RETURNING *`,
+      [status || null, card_uid || null, resolvedNote !== null ? resolvedNote : null, req.params.id]
+    );
+
+    // ── Log note additions to card_logs ──────────────────────────
+    if (last_note !== undefined && last_note !== null) {
+      let logAction = 'NOTE_ADDED';
+      let logNote   = last_note;
+
+      if (restoringToAvailable) {
+        logAction = 'NOTE_CLEARED';
+        logNote   = `Note cleared — card restored to available by ${req.user.full_name || 'staff'}`;
+      } else if (status && status !== current.status) {
+        // Status change with a note — label it as status change
+        logAction = 'STATUS_CHANGED';
+        logNote   = `Status changed from ${current.status} to ${status}${last_note ? '. Note: ' + last_note : ''}`;
+      } else if (!last_note.trim()) {
+        logAction = 'NOTE_CLEARED';
+        logNote   = 'Note cleared.';
+      }
+
+      await client.query(
+        `INSERT INTO card_logs (card_id, user_id, action, visitor_id, notes)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [
+          req.params.id,
+          req.user.userId || req.user.user_id,
+          logAction,
+          current.visitor_id || null,
+          logNote
+        ]
+      );
+    } else if (status && status !== current.status) {
+      // Status changed but no note sent — still log the status change
+      await client.query(
+        `INSERT INTO card_logs (card_id, user_id, action, visitor_id, notes)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [
+          req.params.id,
+          req.user.userId || req.user.user_id,
+          'STATUS_CHANGED',
+          current.visitor_id || null,
+          `Status changed from ${current.status} to ${status}${restoringToAvailable && current.last_note ? ' — note cleared' : ''}`
+        ]
+      );
+    }
+
+    await client.query('COMMIT');
     res.json(rows[0]);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
 });
 
 // DELETE card (admin only — only if available or retired)

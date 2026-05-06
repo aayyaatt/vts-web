@@ -2,6 +2,38 @@
 :root {
   --radius: 8px;
 }
+/* ── Zoom / Responsive Safety ─────────────────────────── */
+
+/* Prevent horizontal scroll caused by overflowing elements */
+html, body {
+  overflow-x: hidden;
+  min-width: 0;
+}
+
+/* All layout containers should shrink, not overflow */
+*, *::before, *::after {
+  box-sizing: border-box;
+  min-width: 0;        /* critical — flex/grid children default to min-width: auto which causes overflow */
+}
+
+/* Tables should never blow past their container */
+table {
+  width: 100%;
+  table-layout: fixed;
+}
+
+/* Prevent text from overflowing table cells */
+td, th {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Cards and panels should be fluid */
+.panel, [class*="card"] {
+  width: 100%;
+  max-width: 100%;
+}
 
 /* Buttons */
 .btn-primary, button.btn-primary {
