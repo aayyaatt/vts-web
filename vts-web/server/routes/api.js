@@ -1,6 +1,6 @@
 const express = require('express');
 const router  = express.Router();
-const pool    = require('../db/pool');
+const pool = require('../db/pool');
 const auth    = require('../middleware/auth');
 
 // -- VISITORS ---------------------------------------------------
@@ -24,20 +24,108 @@ router.get('/visitors', auth, async (req, res) => {
 });
 
 // POST create or upsert visitor
+// POST create or upsert visitor
+// POST create or upsert visitor
+// Schema: cpr_number defaults to '', phone is NOT NULL and UNIQUE (unique_phone_no_cpr)
 router.post("/visitors", auth, async (req, res) => {
   const { full_name, cpr_number, phone, email, company } = req.body;
-  if (!full_name || !cpr_number) return res.status(400).json({ error: "full_name and cpr_number required." });
+
+  if (!full_name || !full_name.trim()) {
+    return res.status(400).json({ error: "Full name is required." });
+  }
+  if (!phone || !phone.trim()) {
+    return res.status(400).json({ error: "Phone number is required." });
+  }
+
+  const trimmedCpr   = cpr_number && cpr_number.trim() !== "" ? cpr_number.trim() : null;
+  const trimmedPhone = phone.trim();
+
   try {
-    const { rows } = await pool.query(
-      `INSERT INTO visitors (full_name, cpr_number, phone, email, company)
-       VALUES ($1,$2,$3,$4,$5)
-       ON CONFLICT (cpr_number) DO UPDATE
-         SET full_name=$1, phone=$3, email=$4, company=$5, updated_at=now()
-       RETURNING *`,
-      [full_name, cpr_number, phone||null, email||null, company||null]
-    );
-    res.status(201).json(rows[0]);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+    let visitorRecord;
+
+    if (trimmedCpr) {
+      // Has CPR — find by CPR first (most reliable identifier)
+      const byCpr = await pool.query(
+        `SELECT * FROM visitors WHERE cpr_number = $1 LIMIT 1`,
+        [trimmedCpr]
+      );
+
+      if (byCpr.rows.length > 0) {
+        // Update existing visitor found by CPR
+        const result = await pool.query(
+          `UPDATE visitors
+           SET full_name = $1, phone = $2, email = $3, company = $4, updated_at = now()
+           WHERE visitor_id = $5
+           RETURNING *`,
+          [full_name, trimmedPhone, email || null, company || null, byCpr.rows[0].visitor_id]
+        );
+        visitorRecord = result.rows[0];
+      } else {
+        // New visitor with CPR — check if phone already taken by someone else
+        const byPhone = await pool.query(
+          `SELECT visitor_id, cpr_number FROM visitors WHERE phone = $1 LIMIT 1`,
+          [trimmedPhone]
+        );
+
+        if (byPhone.rows.length > 0) {
+          // Phone belongs to a different visitor — update their CPR and details
+          const result = await pool.query(
+            `UPDATE visitors
+             SET full_name = $1, cpr_number = $2, email = $3, company = $4, updated_at = now()
+             WHERE visitor_id = $5
+             RETURNING *`,
+            [full_name, trimmedCpr, email || null, company || null, byPhone.rows[0].visitor_id]
+          );
+          visitorRecord = result.rows[0];
+        } else {
+          // Truly new visitor
+          const result = await pool.query(
+            `INSERT INTO visitors (full_name, cpr_number, phone, email, company)
+             VALUES ($1, $2, $3, $4, $5)
+             RETURNING *`,
+            [full_name, trimmedCpr, trimmedPhone, email || null, company || null]
+          );
+          visitorRecord = result.rows[0];
+        }
+      }
+    } else {
+      // No CPR — find by phone
+      const byPhone = await pool.query(
+        `SELECT * FROM visitors WHERE phone = $1 LIMIT 1`,
+        [trimmedPhone]
+      );
+
+      if (byPhone.rows.length > 0) {
+        // Update existing visitor found by phone
+        const result = await pool.query(
+          `UPDATE visitors
+           SET full_name = $1, email = $2, company = $3, updated_at = now()
+           WHERE visitor_id = $4
+           RETURNING *`,
+          [full_name, email || null, company || null, byPhone.rows[0].visitor_id]
+        );
+        visitorRecord = result.rows[0];
+      } else {
+        // New visitor without CPR
+        const result = await pool.query(
+          `INSERT INTO visitors (full_name, cpr_number, phone, email, company)
+           VALUES ($1, $2, $3, $4, $5)
+           RETURNING *`,
+          [full_name, null, trimmedPhone, email || null, company || null]
+        );
+        visitorRecord = result.rows[0];
+      }
+    }
+
+    res.status(201).json(visitorRecord);
+  } catch (err) {
+    console.error('[VISITORS POST]', err.message);
+    // Give a friendlier error for phone conflicts
+    if (err.code === '23505' && err.constraint === 'unique_phone_no_cpr') {
+      return res.status(409).json({ error: 'This phone number is already registered to another visitor.' });
+    }
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // POST check CPR against flagged list
@@ -97,7 +185,6 @@ router.get('/visits', auth, async (req, res) => {
       ORDER BY v.check_in_time DESC LIMIT 200
     `, params);
     
-    // 1. THIS PRINTS TO YOUR BACKEND TERMINAL
     console.log("--- DEBUG DASHBOARD DATA ---");
     if (rows.length > 0) {
       console.log("First Row:", rows[0]);
@@ -105,7 +192,6 @@ router.get('/visits', auth, async (req, res) => {
       console.log("No rows found for query:", whereClause, params);
     }
 
-    // 2. THIS SENDS THE DATA TO THE BROWSER (CRITICAL!)
     res.json(rows);
 
   } catch (err) { 
@@ -228,7 +314,7 @@ router.post('/visits', auth, async (req, res) => {
 // PATCH check-out
 router.patch('/visits/:id/checkout', auth, async (req, res) => {
   const { id } = req.params;
-  console.log('[CHECKOUT] visit:', id, 'by user:', req.user.userId);
+  // console.log('[CHECKOUT] visit:', id, 'by user:', req.user.userId);
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -495,6 +581,34 @@ router.delete('/departments/:id', auth, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// -- EMPLOYEES (from SQL Server) ---------------------------------------
+router.get('/employees', async (req, res) => {
+  try {
+    const { poolPromise } = require('../db/sqlPool'); 
+    const pool = await poolPromise;
+    const result = await pool.request().query(
+      `SELECT emp_id, emp_name FROM dbo.employees ORDER BY emp_name ASC`
+    );
+    res.json(result.recordset);
+  } catch (err) {
+    console.error('[EMPLOYEES GET]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/test-sql', async (req, res) => {  // ← removed auth
+  try {
+    const { poolPromise } = require('../db/sqlPool');
+    const pool = await poolPromise;
+    if (!pool) return res.status(503).json({ error: 'Pool is null — connection failed.' });
+    const result = await pool.request().query('SELECT 1 AS test');
+    res.json({ success: true, result: result.recordset });
+  } catch (err) {
+    console.error('SQL TEST ERROR:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // -- CARD MANAGEMENT ---------------------------------------------------------
 
 // POST add new card (admin only)
@@ -502,13 +616,17 @@ router.post('/cards', auth, async (req, res) => {
   if (req.user.role !== 'admin' && req.user.role !== 'manager') {
     return res.status(403).json({ error: 'Admin or manager only.' });
   }
-  const { card_uid } = req.body;
+  const { card_uid, accessible_floors } = req.body;
   if (!card_uid) return res.status(400).json({ error: 'card_uid is required.' });
+
+  // accessible_floors: [] = general (all floors), ['3'] = floor 3 only
+  const floors = Array.isArray(accessible_floors) ? accessible_floors : [];
+
   try {
     const { rows } = await pool.query(
-      `INSERT INTO access_cards (card_uid, status)
-       VALUES ($1, 'available') RETURNING *`,
-      [card_uid.trim()]
+      `INSERT INTO access_cards (card_uid, status, accessible_floors)
+       VALUES ($1, 'available', $2) RETURNING *`,
+      [card_uid.trim(), floors]
     );
     res.status(201).json(rows[0]);
   } catch (err) {
@@ -516,7 +634,6 @@ router.post('/cards', auth, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
 // PATCH update card status (admin only)
 // PATCH update card status (admin only)
 router.patch('/cards/:id', auth, async (req, res) => {
@@ -800,5 +917,74 @@ router.get('/cards/logs', auth, async (req, res) => {
 //     client.release();
 //   }
 // });
+
+// ── FLOORS (system_config based) ─────────────────────────────
+// Floors are stored as a JSON array in system_config under key 'floors'
+
+// GET all floors
+router.get('/floors', auth, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT config_value FROM system_config WHERE config_key = 'floors'`
+    );
+    if (rows.length === 0) {
+      // Default floors if none configured yet
+      return res.json(['G', '1', '2', '3', '4', '5', '6', '7', '8']);
+    }
+    res.json(JSON.parse(rows[0].config_value));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST add a new floor (admin only)
+router.post('/floors', auth, async (req, res) => {
+  if (req.user.role !== 'admin' && req.user.role !== 'manager') {
+    return res.status(403).json({ error: 'Admin or manager only.' });
+  }
+  const { floor } = req.body;
+  if (!floor || !floor.trim()) return res.status(400).json({ error: 'floor is required.' });
+  const trimmed = floor.trim();
+  try {
+    // Get current floors
+    const { rows } = await pool.query(
+      `SELECT config_value FROM system_config WHERE config_key = 'floors'`
+    );
+    const current = rows.length > 0 ? JSON.parse(rows[0].config_value) : ['G','1','2','3','4','5','6','7','8'];
+    if (current.includes(trimmed)) {
+      return res.status(409).json({ error: `Floor "${trimmed}" already exists.` });
+    }
+    const updated = [...current, trimmed];
+    await pool.query(
+      `INSERT INTO system_config (config_key, config_value, description, changed_by, changed_at)
+       VALUES ('floors', $1, 'Building floor list', $2, now())
+       ON CONFLICT (config_key) DO UPDATE
+         SET config_value = $1, changed_by = $2, changed_at = now()`,
+      [JSON.stringify(updated), req.user.userId || req.user.user_id]
+    );
+    res.json(updated);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// DELETE a floor (admin only)
+router.delete('/floors/:floor', auth, async (req, res) => {
+  if (req.user.role !== 'admin' && req.user.role !== 'manager') {
+    return res.status(403).json({ error: 'Admin or manager only.' });
+  }
+  const floorToRemove = decodeURIComponent(req.params.floor);
+  try {
+    const { rows } = await pool.query(
+      `SELECT config_value FROM system_config WHERE config_key = 'floors'`
+    );
+    const current = rows.length > 0 ? JSON.parse(rows[0].config_value) : [];
+    const updated = current.filter(f => f !== floorToRemove);
+    await pool.query(
+      `INSERT INTO system_config (config_key, config_value, description, changed_by, changed_at)
+       VALUES ('floors', $1, 'Building floor list', $2, now())
+       ON CONFLICT (config_key) DO UPDATE
+         SET config_value = $1, changed_by = $2, changed_at = now()`,
+      [JSON.stringify(updated), req.user.userId || req.user.user_id]
+    );
+    res.json(updated);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
 
 module.exports = router;

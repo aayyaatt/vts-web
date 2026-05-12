@@ -3,7 +3,7 @@ const router  = express.Router();
 const bcrypt  = require('bcrypt');
 const jwt     = require('jsonwebtoken');
 const crypto  = require('crypto');
-const pool    = require('../db/pool');
+const pool = require('../db/pool');
 const authMiddleware = require('../middleware/auth');
 
 // ── POST /api/auth/login ──────────────────────────────────────

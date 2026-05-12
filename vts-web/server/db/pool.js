@@ -16,6 +16,8 @@ pool.on('error', (err) => {
   console.error('[DB] Unexpected pool error:', err.message);
 });
 
+
+
 // Test connection on startup
 pool.query('SELECT NOW()')
   .then(() => console.log('[DB] PostgreSQL connected successfully'))

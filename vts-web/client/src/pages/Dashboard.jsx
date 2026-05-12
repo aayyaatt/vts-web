@@ -53,13 +53,12 @@ function StatusBadge({ status }) {
 }
 
 export default function Dashboard() {
-  const navigate   = useNavigate();
-  const [stats,    setStats]    = useState(null);
-  const [visits,   setVisits]   = useState([]);
-  const [loading,  setLoading]  = useState(true);
-  const [checking, setChecking] = useState(null);
-  const [filter,   setFilter]   = useState('all');
-  const [cprSearch,setCprSearch]= useState('');   // ← new
+  const navigate    = useNavigate();
+  const [stats,     setStats]     = useState(null);
+  const [visits,    setVisits]    = useState([]);
+  const [loading,   setLoading]   = useState(true);
+  const [filter,    setFilter]    = useState('all');
+  const [cprSearch, setCprSearch] = useState('');
 
   const fetchAll = useCallback(async () => {
     try {
@@ -79,22 +78,12 @@ export default function Dashboard() {
     return () => clearInterval(t);
   }, [fetchAll]);
 
-  async function handleCheckout(visitId, name) {
-    if (!window.confirm(`Check out ${name}?`)) return;
-    setChecking(visitId);
-    try {
-      await api.patch(`/visits/${visitId}/checkout`);
-      fetchAll();
-    } catch (err) { alert(err.response?.data?.error || 'Checkout failed.'); }
-    setChecking(null);
-  }
-
   const now = new Date().toLocaleString('en-GB', {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
     hour: '2-digit', minute: '2-digit',
   });
 
-  const warningVisits = visits.filter(v => {
+  const warningVisits  = visits.filter(v => {
     const liveStatus = getLiveStatus(v);
     if (liveStatus === 'overstay') return false;
     const { warn } = getThresholds(v.purpose);
@@ -104,7 +93,6 @@ export default function Dashboard() {
   const overstayVisits    = visits.filter(v => getLiveStatus(v) === 'overstay');
   const liveOverstayCount = overstayVisits.length;
 
-  // Filter by tab AND CPR search
   const filteredVisits = visits.filter(v => {
     const live = getLiveStatus(v);
     if (filter === 'active'   && live !== 'active')   return false;
@@ -184,55 +172,30 @@ export default function Dashboard() {
         <KPI label="Check-Ins Today" value={stats?.checkins_today}  color="blue"  sub="total today" />
       </div>
 
-      {/* Active Visits Table */}
+      {/* Active Visits Table — display only, no checkout */}
       <div style={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
 
-        {/* Panel header */}
         <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
           <span style={{ fontSize: 14, fontWeight: 600 }}>🟢 Active Visitors</span>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-
-            {/* Filter tabs */}
             {[['all','All'],['active','Active'],['overstay','⚠ Overstay']].map(([val, label]) => (
               <button key={val} onClick={() => setFilter(val)}
-                style={{
-                  padding: '4px 12px', borderRadius: 100, fontSize: 11,
-                  fontFamily: 'var(--sans)', cursor: 'pointer', transition: 'all .15s',
-                  border: `1px solid ${filter === val ? 'rgba(56,139,253,.4)' : 'var(--border2)'}`,
-                  background: filter === val ? 'rgba(56,139,253,.12)' : 'transparent',
-                  color:      filter === val ? 'var(--blue)' : 'var(--dim)',
-                  position: 'relative',
-                }}>
+                style={{ padding: '4px 12px', borderRadius: 100, fontSize: 11, fontFamily: 'var(--sans)', cursor: 'pointer', transition: 'all .15s', border: `1px solid ${filter === val ? 'rgba(56,139,253,.4)' : 'var(--border2)'}`, background: filter === val ? 'rgba(56,139,253,.12)' : 'transparent', color: filter === val ? 'var(--blue)' : 'var(--dim)', position: 'relative' }}>
                 {label}
                 {val === 'overstay' && liveOverstayCount > 0 && (
-                  <span style={{ marginLeft: 5, background: 'var(--red)', color: '#fff', borderRadius: 100, padding: '1px 5px', fontSize: 10 }}>
-                    {liveOverstayCount}
-                  </span>
+                  <span style={{ marginLeft: 5, background: 'var(--red)', color: '#fff', borderRadius: 100, padding: '1px 5px', fontSize: 10 }}>{liveOverstayCount}</span>
                 )}
               </button>
             ))}
 
-            {/* CPR / name search */}
             <div style={{ position: 'relative' }}>
               <span style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', fontSize: 11, color: 'var(--dim)', pointerEvents: 'none' }}>🔍</span>
-              <input
-                type="text"
-                placeholder="Search CPR or name…"
-                value={cprSearch}
-                onChange={e => setCprSearch(e.target.value)}
-                style={{
-                  background: 'var(--panel2)', border: '1px solid var(--border2)',
-                  borderRadius: 7, padding: '5px 10px 5px 26px',
-                  fontSize: 12, color: 'var(--text)', fontFamily: 'var(--sans)',
-                  outline: 'none', width: 170,
-                }}
-              />
+              <input type="text" placeholder="Search CPR or name…" value={cprSearch} onChange={e => setCprSearch(e.target.value)}
+                style={{ background: 'var(--panel2)', border: '1px solid var(--border2)', borderRadius: 7, padding: '5px 10px 5px 26px', fontSize: 12, color: 'var(--text)', fontFamily: 'var(--sans)', outline: 'none', width: 170 }} />
               {cprSearch && (
                 <button onClick={() => setCprSearch('')}
-                  style={{ position: 'absolute', right: 7, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--dim)', cursor: 'pointer', fontSize: 12, lineHeight: 1, padding: 0 }}>
-                  ✕
-                </button>
+                  style={{ position: 'absolute', right: 7, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--dim)', cursor: 'pointer', fontSize: 12, lineHeight: 1, padding: 0 }}>✕</button>
               )}
             </div>
 
@@ -240,7 +203,6 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Table */}
         {loading ? (
           <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--dim)', fontSize: 13 }}>Loading…</div>
         ) : filteredVisits.length === 0 ? (
@@ -252,7 +214,8 @@ export default function Dashboard() {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
-                  {['Visitor', 'Card', 'Department', 'Floor', 'Host', 'Staff', 'Check-In', 'Duration', 'Status', ''].map(h => (
+                  {/* No checkout column on dashboard */}
+                  {['Visitor', 'Card', 'Department', 'Floor', 'Host', 'Staff', 'Check-In', 'Duration', 'Status'].map(h => (
                     <th key={h} style={{ fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '.08em', color: 'var(--dim)', textAlign: 'left', padding: '9px 14px', borderBottom: '1px solid var(--border)', background: 'rgba(255,255,255,.02)', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
                       {h}
                     </th>
@@ -268,7 +231,6 @@ export default function Dashboard() {
                   const isOverstay = liveStatus === 'overstay';
                   const rowBg      = isOverstay ? 'rgba(248,81,73,.04)' : isWarning ? 'rgba(240,160,52,.03)' : 'transparent';
 
-                  // Highlight matched CPR digits
                   const cprDisplay = cprSearch.trim()
                     ? <span style={{ color: 'var(--blue)', fontWeight: 700 }}>{v.cpr_number}</span>
                     : v.cpr_number;
@@ -290,48 +252,25 @@ export default function Dashboard() {
                           </div>
                         </div>
                       </td>
-
                       <td style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)' }}>
                         <span style={{ background: 'rgba(56,139,253,.1)', color: 'var(--blue)', borderRadius: 5, padding: '3px 8px', fontSize: 12, fontFamily: 'var(--mono)', fontWeight: 600 }}>
                           {v.card_uid || '—'}
                         </span>
                       </td>
-
                       <td style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)', fontSize: 13, color: 'var(--text)' }}>{v.department_name || '—'}</td>
                       <td style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)', fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--blue)', fontWeight: 600 }}>{v.floor || '—'}</td>
                       <td style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)', fontSize: 13, color: 'var(--dim)' }}>{v.host_employee || '—'}</td>
                       <td style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)', fontSize: 12, color: 'var(--dim)' }}>{v.checked_in_by_name || '—'}</td>
-
                       <td style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)', fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--dim)', whiteSpace: 'nowrap' }}>
                         {new Date(v.check_in_time).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
                       </td>
-
                       <td style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)', fontFamily: 'var(--mono)', fontSize: 12, color: isOverstay ? 'var(--red)' : isWarning ? 'var(--amber)' : 'var(--dim)', whiteSpace: 'nowrap' }}>
                         {duration(v.duration_minutes)}
                       </td>
-
                       <td style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)' }}>
                         <StatusBadge status={liveStatus} />
                       </td>
-
-                      <td style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)' }}>
-                        <button
-                          onClick={() => handleCheckout(v.visit_id, v.visitor_name)}
-                          disabled={checking === v.visit_id}
-                          style={{
-                            padding: '5px 14px', borderRadius: 6, fontSize: 12, fontWeight: 600,
-                            fontFamily: 'var(--sans)', cursor: checking === v.visit_id ? 'not-allowed' : 'pointer',
-                            border: '1px solid rgba(248,81,73,.3)',
-                            background: checking === v.visit_id ? 'transparent' : 'rgba(248,81,73,.08)',
-                            color: checking === v.visit_id ? 'var(--dim)' : 'var(--red)',
-                            transition: 'all .15s', whiteSpace: 'nowrap',
-                          }}
-                          onMouseEnter={e => { if (checking !== v.visit_id) { e.currentTarget.style.background = 'rgba(248,81,73,.18)'; e.currentTarget.style.borderColor = 'var(--red)'; }}}
-                          onMouseLeave={e => { e.currentTarget.style.background = checking === v.visit_id ? 'transparent' : 'rgba(248,81,73,.08)'; e.currentTarget.style.borderColor = 'rgba(248,81,73,.3)'; }}
-                        >
-                          {checking === v.visit_id ? '…' : '↩ Check Out'}
-                        </button>
-                      </td>
+                      {/* No checkout button — checkout is done from Check-In page */}
                     </tr>
                   );
                 })}
