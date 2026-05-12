@@ -987,4 +987,77 @@ router.delete('/floors/:floor', auth, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// PATCH update user details (admin only)
+router.patch('/users/:id', auth, async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Only admins can modify user accounts.' });
+  }
+
+  const { full_name, email, phone, role, password } = req.body;
+
+  const validRoles = ['admin', 'security', 'manager', 'reception'];
+  if (role && !validRoles.includes(role)) {
+    return res.status(400).json({ error: 'Invalid role.' });
+  }
+
+  try {
+    // If password is being changed, validate and hash it
+    let passwordUpdate = '';
+    let params = [];
+    let paramIdx = 1;
+
+    const updates = [];
+
+    if (full_name) { updates.push(`full_name = $${paramIdx++}`); params.push(full_name); }
+    if (email)     { updates.push(`email = $${paramIdx++}`);     params.push(email.toLowerCase().trim()); }
+    if (phone !== undefined) { updates.push(`phone = $${paramIdx++}`); params.push(phone || null); }
+    if (role)      { updates.push(`role = $${paramIdx++}`);      params.push(role); }
+
+    if (password) {
+      const pwChecks = {
+        length:  password.length >= 10,
+        upper:   /[A-Z]/.test(password),
+        lower:   /[a-z]/.test(password),
+        number:  /[0-9]/.test(password),
+        symbol:  /[^A-Za-z0-9]/.test(password),
+      };
+      if (!Object.values(pwChecks).every(Boolean)) {
+        return res.status(400).json({ error: 'Password must be at least 10 characters and include uppercase, lowercase, number, and symbol.' });
+      }
+      const bcrypt = require('bcrypt');
+      const hash = await bcrypt.hash(password, 12);
+      updates.push(`password_hash = $${paramIdx++}`);
+      params.push(hash);
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ error: 'No fields to update.' });
+    }
+
+    updates.push(`updated_at = now()`);
+    params.push(req.params.id);
+
+    const { rows } = await pool.query(
+      `UPDATE users SET ${updates.join(', ')}
+       WHERE user_id = $${paramIdx}
+       RETURNING user_id, email, full_name, role, phone, is_active, last_login, created_at`,
+      params
+    );
+
+    if (rows.length === 0) return res.status(404).json({ error: 'User not found.' });
+
+    // Audit log
+    await pool.query(
+      `INSERT INTO audit_log (user_id, action, target_table, target_id, new_values)
+       VALUES ($1, 'UPDATE_USER', 'users', $2, $3)`,
+      [req.user.userId, String(req.params.id), JSON.stringify({ full_name, email, role, phone, password_changed: !!password })]
+    );
+
+    res.json(rows[0]);
+  } catch (err) {
+    if (err.code === '23505') return res.status(409).json({ error: 'This email is already in use.' });
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
